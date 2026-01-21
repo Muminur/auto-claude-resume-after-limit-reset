@@ -1,0 +1,32 @@
+{
+  "name": "claude-auto-resume",
+  "version": "1.0.0",
+  "description": "Automatically resume Claude Code terminal sessions when rate limits reset",
+  "main": "index.js",
+  "bin": {
+    "claude-auto-resume": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node index.js --test 10"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "auto-resume",
+    "rate-limit",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "clipboardy": "^4.0.0",
+    "robotjs": "^0.6.0"
+  },
+  "optionalDependencies": {
+    "robotjs": "^0.6.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
