@@ -4,11 +4,17 @@
   "description": "Automatically resume Claude Code terminal sessions when rate limits reset",
   "main": "index.js",
   "bin": {
-    "claude-auto-resume": "./index.js"
+    "claude-auto-resume": "./index.js",
+    "claude-resume-daemon": "./auto-resume-daemon.js"
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node index.js --test 10"
+    "test": "node index.js --test 10",
+    "test:daemon": "node test-daemon.js",
+    "daemon:start": "node auto-resume-daemon.js start",
+    "daemon:stop": "node auto-resume-daemon.js stop",
+    "daemon:status": "node auto-resume-daemon.js status",
+    "daemon:restart": "node auto-resume-daemon.js restart"
   },
   "keywords": [
     "claude",
