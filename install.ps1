@@ -58,7 +58,7 @@ $STARTUP_FOLDER = [Environment]::GetFolderPath('Startup')
 # Source files
 $SCRIPT_DIR = $PSScriptRoot
 $HOOK_SOURCE = Join-Path $SCRIPT_DIR "hooks\rate-limit-hook.js"
-$DAEMON_SOURCE = Join-Path $SCRIPT_DIR "index.js"
+$DAEMON_SOURCE = Join-Path $SCRIPT_DIR "auto-resume-daemon.js"
 $PACKAGE_JSON_SOURCE = Join-Path $SCRIPT_DIR "package.json"
 
 # Destination files

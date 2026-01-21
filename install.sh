@@ -40,7 +40,7 @@ SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
 # Source files (in same directory as installer)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_SOURCE="${SCRIPT_DIR}/hooks/rate-limit-hook.js"
-DAEMON_SOURCE="${SCRIPT_DIR}/index.js"
+DAEMON_SOURCE="${SCRIPT_DIR}/auto-resume-daemon.js"
 PACKAGE_SOURCE="${SCRIPT_DIR}/package.json"
 
 # Destination files
