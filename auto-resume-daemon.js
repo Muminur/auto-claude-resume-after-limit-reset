@@ -247,32 +247,72 @@ async function sendContinueToTerminals() {
 
   return new Promise((resolve, reject) => {
     if (platform === 'win32') {
-      // Windows: Find all Claude Code windows and send keystrokes
+      // Windows: Find terminal windows and send keystrokes
+      // CLI tools run in terminals like Windows Terminal, PowerShell, cmd
       const script = `
         Add-Type -AssemblyName System.Windows.Forms
+        Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public class Win32 {
+            [DllImport("user32.dll")]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            public static extern bool SetForegroundWindow(IntPtr hWnd);
+            [DllImport("user32.dll")]
+            public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+          }
+"@
 
-        # Get all windows with "Claude" in the title
-        $windows = Get-Process | Where-Object { $_.MainWindowTitle -match "Claude" }
+        # Terminal window patterns - CLI tools run in these
+        $terminalPatterns = @(
+          "WindowsTerminal",
+          "powershell",
+          "pwsh",
+          "cmd",
+          "ConEmu",
+          "ConEmu64",
+          "mintty",
+          "Cmder",
+          "Hyper",
+          "Terminus",
+          "Alacritty",
+          "wezterm-gui",
+          "Code"
+        )
 
-        if ($windows) {
-          foreach ($window in $windows) {
-            # Bring window to front (optional)
-            # [System.Windows.Forms.Application]::SetForegroundWindow($window.MainWindowHandle)
+        $foundWindows = @()
 
-            Start-Sleep -Milliseconds 500
+        foreach ($pattern in $terminalPatterns) {
+          $procs = Get-Process -Name $pattern -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
+          if ($procs) {
+            $foundWindows += $procs
+          }
+        }
+
+        if ($foundWindows.Count -gt 0) {
+          foreach ($window in $foundWindows) {
+            Write-Output "Found: $($window.ProcessName) - $($window.MainWindowTitle)"
+
+            # Bring window to foreground
+            [Win32]::ShowWindow($window.MainWindowHandle, 9) | Out-Null  # SW_RESTORE
+            Start-Sleep -Milliseconds 200
+            [Win32]::SetForegroundWindow($window.MainWindowHandle) | Out-Null
+            Start-Sleep -Milliseconds 300
+
+            # Send the text and Enter
             [System.Windows.Forms.SendKeys]::SendWait('${text.replace(/'/g, "''")}')
             Start-Sleep -Milliseconds 100
             [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
             Start-Sleep -Milliseconds 500
           }
 
-          Write-Output "Sent to $($windows.Count) window(s)"
+          Write-Output "Sent to $($foundWindows.Count) terminal window(s)"
         } else {
-          Write-Output "No Claude windows found"
+          Write-Output "No terminal windows found"
         }
       `;
 
-      exec(`powershell -Command "${script.replace(/"/g, '\\"')}"`, (error, stdout) => {
+      exec(`powershell -NoProfile -Command "${script.replace(/"/g, '\\"')}"`, (error, stdout) => {
         if (error) {
           log('error', `Failed to send keystrokes: ${error.message}`);
           reject(error);
