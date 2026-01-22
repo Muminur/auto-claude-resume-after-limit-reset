@@ -56,9 +56,41 @@ A background service that monitors for detected rate limits:
   - Logs all activity for debugging
 
 **Platform-specific keystroke sending:**
-- Windows: PowerShell window automation
+- Windows: PowerShell + Win32 API (SetForegroundWindow, ShowWindow)
 - Linux: xdotool for terminal control
 - macOS: osascript for Terminal/iTerm integration
+
+## Architecture
+
+```
+┌─────────────────┐     writes      ┌──────────────────┐
+│  Rate Limit     │ ───────────────►│  status.json     │
+│  Detection Hook │                 │  (reset_time)    │
+└─────────────────┘                 └────────┬─────────┘
+                                             │ watches
+                                             ▼
+                                    ┌──────────────────┐
+                                    │  Daemon Process  │
+                                    │  (background)    │
+                                    └────────┬─────────┘
+                                             │ when reset_time arrives
+                                             ▼
+                                    ┌──────────────────┐
+                                    │  Send Keystrokes │
+                                    │  to Terminal     │
+                                    └──────────────────┘
+```
+
+### Windows Terminal Detection
+
+The daemon finds terminal windows by process name (not window title):
+
+```
+WindowsTerminal, powershell, pwsh, cmd, ConEmu, ConEmu64,
+mintty, Cmder, Hyper, Terminus, Alacritty, wezterm-gui, Code
+```
+
+This ensures the daemon can send keystrokes to any terminal where CLI sessions run, regardless of the window title
 
 ## Rate Limit Detection Example
 
