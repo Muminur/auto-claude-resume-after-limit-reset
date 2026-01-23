@@ -21,16 +21,36 @@ const HOME_DIR = os.homedir();
 const STATUS_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
 const STATUS_FILE = path.join(STATUS_DIR, 'status.json');
 
-// Rate limit detection patterns - must be SPECIFIC to avoid false positives
-// These patterns should only match actual rate limit error messages, not conversation text
-const RATE_LIMIT_PATTERNS = [
-  /You've hit your (?:usage )?limit/i,                    // Claude's actual message
-  /resets\s+\d{1,2}(?:am|pm)\s*\([^)]+\)/i,              // "resets 7pm (America/New_York)" - very specific format
+// Rate limit detection patterns - ULTRA SPECIFIC to avoid false positives
+// Must match the EXACT format of Claude Code's rate limit UI message
+// Pattern: "You've hit your limit · resets Xpm (Timezone)"
+const RATE_LIMIT_COMBINED_PATTERN = /You['']ve hit your (?:usage )?limit.*?resets\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\)/i;
+
+// Secondary patterns for API errors (not from file contents)
+const API_ERROR_PATTERNS = [
   /"type"\s*:\s*"rate_limit_error"/i,                    // API error JSON
   /exceeded your current quota/i,                         // API quota error
-  /Request was throttled/i,                               // Throttling message
-  /Too many requests.*retry after/i,                      // Retry-after pattern
 ];
+
+// Patterns that indicate content is from a file read (FALSE POSITIVE indicators)
+const FALSE_POSITIVE_INDICATORS = [
+  /tool_result/i,                                         // Tool result wrapper
+  /tool_use_id/i,                                         // Tool use indicator
+  /toolu_/i,                                              // Tool ID prefix
+  /^\s*\d+→/m,                                           // Line number prefix from Read tool
+  /\\n\s+\d+→/,                                          // Escaped line numbers
+  /["']content["']\s*:\s*["']\s*\d+→/,                   // Content field with line numbers
+  /\/\*\*[\s\S]*?\*\//,                                  // JSDoc comments (code being read)
+  /function\s+\w+\s*\(/,                                 // Function definitions (code)
+  /const\s+\w+\s*=/,                                     // Const declarations (code)
+  /RATE_LIMIT_PATTERNS/,                                 // Our own pattern variable name
+  /parentUuid/i,                                          // Transcript metadata
+  /sessionId/i,                                           // Session metadata
+  /isSidechain/i,                                         // Sidechain indicator
+];
+
+// Maximum length for a valid rate limit message (real messages are short)
+const MAX_RATE_LIMIT_MESSAGE_LENGTH = 200;
 
 // Time parsing patterns
 const TIME_PATTERNS = {
@@ -119,13 +139,47 @@ function parseResetTime(message) {
 }
 
 /**
- * Check if a message contains rate limit indicators
+ * Check if content appears to be from a file read (false positive)
+ * @param {string} content - The content to check
+ * @returns {boolean}
+ */
+function isFalsePositive(content) {
+  if (!content || typeof content !== 'string') return false;
+  return FALSE_POSITIVE_INDICATORS.some(pattern => pattern.test(content));
+}
+
+/**
+ * Check if a message contains REAL rate limit indicators (not false positives)
  * @param {string} message - The message to check
  * @returns {boolean}
  */
 function isRateLimitMessage(message) {
   if (!message || typeof message !== 'string') return false;
-  return RATE_LIMIT_PATTERNS.some(pattern => pattern.test(message));
+
+  // CRITICAL: Length check first - real rate limit messages are SHORT
+  // The actual UI message is: "You've hit your limit · resets 8pm (Asia/Dhaka)"
+  // This is about 50-100 chars, never thousands
+  if (message.length > MAX_RATE_LIMIT_MESSAGE_LENGTH) {
+    return false;
+  }
+
+  // Check for false positives - if this looks like file/tool content, reject it
+  if (isFalsePositive(message)) {
+    return false;
+  }
+
+  // Primary check: Must have BOTH "hit your limit" AND "resets Xpm" together
+  // This is the exact format Claude Code displays to users
+  if (RATE_LIMIT_COMBINED_PATTERN.test(message)) {
+    return true;
+  }
+
+  // Secondary check: API error patterns (only if very short)
+  if (message.length < 100) {
+    return API_ERROR_PATTERNS.some(pattern => pattern.test(message));
+  }
+
+  return false;
 }
 
 /**
@@ -155,22 +209,54 @@ async function analyzeTranscript(transcriptPath) {
       const entry = JSON.parse(line);
 
       // Extract session ID if available
-      if (entry.session_id) {
-        sessionId = entry.session_id;
+      if (entry.session_id || entry.sessionId) {
+        sessionId = entry.session_id || entry.sessionId;
       }
 
-      // Check various fields for rate limit messages
-      const fields = [
-        entry.content,
-        entry.text,
-        entry.message,
-        entry.error,
-        entry.errorMessage,
-        JSON.stringify(entry.error_data || {}),
-        JSON.stringify(entry)
-      ];
+      // CRITICAL: Convert entry to string ONCE for false positive check
+      const entryString = JSON.stringify(entry);
 
-      for (const field of fields) {
+      // Skip ENTIRE entry if it contains ANY tool-related content
+      // This is the most aggressive filter to prevent false positives
+      if (/tool_result|tool_use_id|toolu_/i.test(entryString)) {
+        continue;
+      }
+
+      // Skip entries that look like transcript metadata (contain parentUuid, etc.)
+      if (/parentUuid|isSidechain|userType.*external/i.test(entryString)) {
+        continue;
+      }
+
+      // CRITICAL: Skip entries that are tool results (file contents, command outputs)
+      if (entry.type === 'tool_result' || entry.type === 'tool_use') {
+        continue;
+      }
+
+      // Skip user messages entirely - they often contain tool results
+      if (entry.message && entry.message.role === 'user') {
+        continue;
+      }
+
+      // Skip if entry type is 'user' (another format for user messages)
+      if (entry.type === 'user') {
+        continue;
+      }
+
+      // Only check specific SMALL fields that would contain actual rate limit messages
+      const fieldsToCheck = [];
+
+      // Check error fields (must be short strings)
+      if (typeof entry.error === 'string' && entry.error.length < MAX_RATE_LIMIT_MESSAGE_LENGTH) {
+        fieldsToCheck.push(entry.error);
+      }
+      if (typeof entry.errorMessage === 'string' && entry.errorMessage.length < MAX_RATE_LIMIT_MESSAGE_LENGTH) {
+        fieldsToCheck.push(entry.errorMessage);
+      }
+      if (typeof entry.systemMessage === 'string' && entry.systemMessage.length < MAX_RATE_LIMIT_MESSAGE_LENGTH) {
+        fieldsToCheck.push(entry.systemMessage);
+      }
+
+      for (const field of fieldsToCheck) {
         if (field && isRateLimitMessage(field)) {
           rateLimitDetected = true;
           rateLimitMessage = field;

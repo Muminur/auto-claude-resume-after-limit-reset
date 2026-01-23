@@ -47,9 +47,26 @@ let watchInterval = null;
 let countdownInterval = null;
 let currentResetTime = null;
 let lastStatusMtime = null;
+let isBackgroundMode = false;  // Track if running detached (no stdout)
 
 /**
- * Logging utility
+ * Safe stdout write - handles EPIPE errors when running detached
+ */
+function safeStdoutWrite(text) {
+  try {
+    if (!isBackgroundMode && process.stdout && process.stdout.writable) {
+      process.stdout.write(text);
+    }
+  } catch (err) {
+    // If we get EPIPE, switch to background mode silently
+    if (err.code === 'EPIPE') {
+      isBackgroundMode = true;
+    }
+  }
+}
+
+/**
+ * Logging utility - handles background mode gracefully
  */
 function log(level, message) {
   const timestamp = new Date().toISOString();
@@ -64,10 +81,18 @@ function log(level, message) {
   const logMessage = `[${timestamp}] ${level.toUpperCase()}: ${message}`;
   const consoleMessage = `${prefix[level] || ''} ${message}`;
 
-  // Write to console
-  console.log(consoleMessage);
+  // Write to console (safely, handles EPIPE)
+  if (!isBackgroundMode) {
+    try {
+      console.log(consoleMessage);
+    } catch (err) {
+      if (err.code === 'EPIPE') {
+        isBackgroundMode = true;
+      }
+    }
+  }
 
-  // Write to log file
+  // Always write to log file (critical for background operation)
   try {
     fs.appendFileSync(LOG_FILE, logMessage + '\n');
   } catch (err) {
@@ -410,9 +435,10 @@ function startCountdown(resetTime) {
     if (remaining <= 0) {
       clearInterval(countdownInterval);
       countdownInterval = null;
-      process.stdout.write(
+      safeStdoutWrite(
         `\r${colors.green}[READY] Reset time reached! Sending continue...${colors.reset}\n`
       );
+      log('info', 'Reset time reached! Sending continue...');
 
       // Send continue to terminals
       sendContinueToTerminals()
@@ -426,7 +452,7 @@ function startCountdown(resetTime) {
         });
     } else {
       const formatted = formatTimeRemaining(remaining);
-      process.stdout.write(
+      safeStdoutWrite(
         `\r${colors.yellow}[WAITING] Resuming in ${formatted}...${colors.reset}`
       );
     }
@@ -440,7 +466,7 @@ function stopCountdown() {
   if (countdownInterval) {
     clearInterval(countdownInterval);
     countdownInterval = null;
-    process.stdout.write('\n');
+    safeStdoutWrite('\n');
   }
   currentResetTime = null;
 }
@@ -601,8 +627,14 @@ function setupSignalHandlers() {
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-  // Handle uncaught errors
+  // Handle uncaught errors - but NOT EPIPE (that's expected in background)
   process.on('uncaughtException', (err) => {
+    // EPIPE is expected when running detached - just switch to background mode
+    if (err.code === 'EPIPE') {
+      isBackgroundMode = true;
+      return;  // Don't crash, just continue
+    }
+
     log('error', `Uncaught exception: ${err.message}`);
     log('error', err.stack);
     shutdown('ERROR');
@@ -648,7 +680,7 @@ async function runTest(seconds) {
 
       if (remaining <= 0) {
         clearInterval(testInterval);
-        process.stdout.write(
+        safeStdoutWrite(
           `\r${colors.green}[TEST] Countdown complete! Sending keystrokes...${colors.reset}\n`
         );
 
@@ -663,7 +695,7 @@ async function runTest(seconds) {
           });
       } else {
         const formatted = formatTimeRemaining(remaining);
-        process.stdout.write(
+        safeStdoutWrite(
           `\r${colors.yellow}[TEST] Sending "continue" in ${formatted}...${colors.reset}`
         );
       }
