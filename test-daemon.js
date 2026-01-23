@@ -204,7 +204,7 @@ function startWatching(waitSeconds, resolve) {
     }
   }, (waitSeconds + 10) * 1000);
 
-  log('info', 'Test is running. Waiting for daemon to send "continue"...');
+  log('info', 'Test is running. Waiting for daemon to send "1", then "continue"...');
   log('info', `Expected completion in ~${waitSeconds} seconds`);
   console.log('');
 }
@@ -288,7 +288,7 @@ DESCRIPTION:
     1. Creating a test status file with a future reset time
     2. Starting the daemon (if not running) or using existing instance
     3. Watching for the daemon to detect the rate limit
-    4. Verifying the daemon sends "continue" when countdown completes
+    4. Verifying the daemon sends "1" when countdown completes
     5. Cleaning up test files
 
 EXAMPLES:
@@ -306,8 +306,8 @@ FILES CREATED:
     ${LOG_FILE}
 
 NOTE:
-    - The daemon will send "continue" to all terminal windows when test completes
-    - Make sure you're ready to receive the keystroke before running the test
+    - The daemon will send "1", then "continue" + Enter when test completes
+    - Make sure you're ready to receive the keystrokes before running the test
     - Use a short wait time (5-10 seconds) for quick testing
 
 `);

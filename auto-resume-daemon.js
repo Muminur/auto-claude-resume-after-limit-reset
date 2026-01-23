@@ -265,10 +265,13 @@ function formatTimeRemaining(ms) {
 
 /**
  * Send keystrokes to Claude Code terminals
+ * Handles the new interactive menu flow:
+ * 1. Send "1" (without Enter) to select option 1
+ * 2. Wait 1 second
+ * 3. Send "continue" + Enter
  */
 async function sendContinueToTerminals() {
   const platform = os.platform();
-  const text = 'continue';
 
   return new Promise((resolve, reject) => {
     if (platform === 'win32') {
@@ -277,10 +280,13 @@ async function sendContinueToTerminals() {
       const scriptContent = `
 Add-Type -AssemblyName System.Windows.Forms
 
-# Send 'continue' + Enter directly to current foreground window
-# Note: This works when terminal is already focused (typical for rate limit resume)
+# Step 1: Send '1' to select option 1 from the interactive menu (no Enter)
+[System.Windows.Forms.SendKeys]::SendWait('1')
+Start-Sleep -Seconds 1
+
+# Step 2: Send 'continue' + Enter to resume the conversation
 [System.Windows.Forms.SendKeys]::SendWait('continue{ENTER}')
-Write-Output "Sent continue + Enter to current window"
+Write-Output "Sent 1, then continue + Enter to current window"
 `;
 
       // Write script to temp file
@@ -309,7 +315,11 @@ Write-Output "Sent continue + Enter to current window"
             if (exists process appName) then
               tell process appName
                 set frontmost to true
-                keystroke "${text}"
+                -- Step 1: Send '1' to select option 1 (no return)
+                keystroke "1"
+                delay 1
+                -- Step 2: Send 'continue' + return to resume
+                keystroke "continue"
                 keystroke return
                 delay 0.5
               end tell
@@ -323,7 +333,7 @@ Write-Output "Sent continue + Enter to current window"
           log('error', `Failed to send keystrokes: ${error.message}`);
           reject(error);
         } else {
-          log('success', `Sent: '${text}' + Enter to terminal windows`);
+          log('success', `Sent: 1, then continue + Enter to terminal windows`);
           resolve();
         }
       });
@@ -345,7 +355,11 @@ Write-Output "Sent continue + Enter to current window"
           for wid in $(xdotool search --class "gnome-terminal|konsole|xterm|terminator|alacritty|kitty" 2>/dev/null); do
             xdotool windowactivate --sync $wid
             sleep 0.2
-            xdotool type --clearmodifiers "${text}"
+            # Step 1: Send '1' to select option 1 (no Return)
+            xdotool type --clearmodifiers "1"
+            sleep 1
+            # Step 2: Send 'continue' + Return to resume
+            xdotool type --clearmodifiers "continue"
             xdotool key Return
             sleep 0.3
           done
@@ -356,7 +370,7 @@ Write-Output "Sent continue + Enter to current window"
             log('error', `Failed to send keystrokes: ${err.message}`);
             reject(err);
           } else {
-            log('success', `Sent: '${text}' + Enter to terminal windows`);
+            log('success', `Sent: 1, then continue + Enter to terminal windows`);
             resolve();
           }
         });
@@ -436,11 +450,11 @@ function startCountdown(resetTime) {
       clearInterval(countdownInterval);
       countdownInterval = null;
       safeStdoutWrite(
-        `\r${colors.green}[READY] Reset time reached! Sending continue...${colors.reset}\n`
+        `\r${colors.green}[READY] Reset time reached! Sending option 1...${colors.reset}\n`
       );
-      log('info', 'Reset time reached! Sending continue...');
+      log('info', 'Reset time reached! Sending option 1...');
 
-      // Send continue to terminals
+      // Send "1" to select option 1 from the interactive menu
       sendContinueToTerminals()
         .then(() => {
           log('success', 'Auto-resume completed!');
@@ -668,7 +682,7 @@ function showBanner() {
 async function runTest(seconds) {
   showBanner();
   log('warning', `[TEST MODE] Simulating rate limit with ${seconds} second countdown`);
-  log('warning', 'WARNING: This will send "continue" + Enter to terminal windows!');
+  log('warning', 'WARNING: This will send "1" + Enter to terminal windows!');
   log('info', '');
 
   const resetTime = new Date(Date.now() + seconds * 1000);
@@ -696,7 +710,7 @@ async function runTest(seconds) {
       } else {
         const formatted = formatTimeRemaining(remaining);
         safeStdoutWrite(
-          `\r${colors.yellow}[TEST] Sending "continue" in ${formatted}...${colors.reset}`
+          `\r${colors.yellow}[TEST] Sending "1" in ${formatted}...${colors.reset}`
         );
       }
     }, 1000);
@@ -728,7 +742,7 @@ DAEMON BEHAVIOR:
        - Shows countdown timer in console
        - When reset time arrives:
          - Finds all Claude Code terminal windows
-         - Sends "continue" + Enter keystroke
+         - Sends "1" + Enter to select option 1
          - Clears the status file
     3. Logs all activity to: ${LOG_FILE}
 
