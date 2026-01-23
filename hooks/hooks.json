@@ -1,29 +1,25 @@
 {
-  "description": "Auto-resume hooks: starts daemon on session start, detects rate limits on stop",
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/ensure-daemon-running.js\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/rate-limit-hook.js\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
+  "SessionStart": [
+    {
+      "matcher": "startup",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/ensure-daemon-running.js\"",
+          "timeout": 5
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/rate-limit-hook.js\"",
+          "timeout": 10
+        }
+      ]
+    }
+  ]
 }

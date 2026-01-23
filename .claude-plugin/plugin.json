@@ -5,5 +5,6 @@
   "author": {
     "name": "Muminur",
     "email": "muminur@example.com"
-  }
+  },
+  "hooks": "../hooks/hooks.json"
 }
