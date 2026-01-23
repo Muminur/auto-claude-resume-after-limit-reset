@@ -402,6 +402,45 @@ function clearStatus() {
 }
 
 /**
+ * Reset status - user-facing command to clear stale rate limit status
+ */
+function resetStatus() {
+  ensureDirectories();
+
+  if (!fs.existsSync(STATUS_FILE)) {
+    log('info', 'No rate limit status found. Nothing to reset.');
+    return true;
+  }
+
+  try {
+    // Read current status for logging
+    const content = fs.readFileSync(STATUS_FILE, 'utf8');
+    const status = JSON.parse(content);
+
+    if (status.detected && status.reset_time) {
+      const resetTime = new Date(status.reset_time);
+      const now = new Date();
+
+      if (resetTime > now) {
+        log('warning', `Active rate limit found (resets at ${resetTime.toLocaleString()})`);
+      } else {
+        log('info', `Stale rate limit found (was set to reset at ${resetTime.toLocaleString()})`);
+      }
+    }
+
+    // Clear the status file
+    fs.unlinkSync(STATUS_FILE);
+    log('success', 'Rate limit status has been reset.');
+    log('info', 'The daemon will now wait for new rate limit detection.');
+
+    return true;
+  } catch (err) {
+    log('error', `Failed to reset status: ${err.message}`);
+    return false;
+  }
+}
+
+/**
  * Start countdown timer display
  */
 function startCountdown(resetTime) {
@@ -693,6 +732,7 @@ COMMANDS:
     stop        Stop the running daemon
     status      Check daemon status
     restart     Restart the daemon
+    --reset     Clear stale rate limit status and recheck
     --test <s>  Test mode: countdown for <s> seconds then send keystrokes
     help        Show this help message
 
@@ -735,6 +775,9 @@ EXAMPLES:
 
     # Test with 10 second countdown
     node auto-resume-daemon.js --test 10
+
+    # Reset stale rate limit status
+    node auto-resume-daemon.js --reset
 
 FILES:
     Status:  ${STATUS_FILE}
@@ -788,6 +831,13 @@ function main() {
       runTest(testSeconds).then(() => {
         process.exit(0);
       });
+      break;
+
+    case '--reset':
+    case '-r':
+    case 'reset':
+      resetStatus();
+      process.exit(0);
       break;
 
     default:
