@@ -247,72 +247,25 @@ async function sendContinueToTerminals() {
 
   return new Promise((resolve, reject) => {
     if (platform === 'win32') {
-      // Windows: Find terminal windows and send keystrokes
-      // CLI tools run in terminals like Windows Terminal, PowerShell, cmd
-      const script = `
-        Add-Type -AssemblyName System.Windows.Forms
-        Add-Type @"
-          using System;
-          using System.Runtime.InteropServices;
-          public class Win32 {
-            [DllImport("user32.dll")]
-            [return: MarshalAs(UnmanagedType.Bool)]
-            public static extern bool SetForegroundWindow(IntPtr hWnd);
-            [DllImport("user32.dll")]
-            public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-          }
-"@
+      // Windows: Write script to temp file to avoid escaping issues
+      const tempScript = path.join(os.tmpdir(), 'claude-auto-resume-send.ps1');
+      const scriptContent = `
+Add-Type -AssemblyName System.Windows.Forms
 
-        # Terminal window patterns - CLI tools run in these
-        $terminalPatterns = @(
-          "WindowsTerminal",
-          "powershell",
-          "pwsh",
-          "cmd",
-          "ConEmu",
-          "ConEmu64",
-          "mintty",
-          "Cmder",
-          "Hyper",
-          "Terminus",
-          "Alacritty",
-          "wezterm-gui",
-          "Code"
-        )
+# Send 'continue' + Enter directly to current foreground window
+# Note: This works when terminal is already focused (typical for rate limit resume)
+[System.Windows.Forms.SendKeys]::SendWait('continue{ENTER}')
+Write-Output "Sent continue + Enter to current window"
+`;
 
-        $foundWindows = @()
+      // Write script to temp file
+      fs.writeFileSync(tempScript, scriptContent, 'utf8');
 
-        foreach ($pattern in $terminalPatterns) {
-          $procs = Get-Process -Name $pattern -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
-          if ($procs) {
-            $foundWindows += $procs
-          }
-        }
+      // Execute the script file
+      exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempScript}"`, (error, stdout) => {
+        // Clean up temp file
+        try { fs.unlinkSync(tempScript); } catch (e) { /* ignore */ }
 
-        if ($foundWindows.Count -gt 0) {
-          foreach ($window in $foundWindows) {
-            Write-Output "Found: $($window.ProcessName) - $($window.MainWindowTitle)"
-
-            # Bring window to foreground
-            [Win32]::ShowWindow($window.MainWindowHandle, 9) | Out-Null  # SW_RESTORE
-            Start-Sleep -Milliseconds 200
-            [Win32]::SetForegroundWindow($window.MainWindowHandle) | Out-Null
-            Start-Sleep -Milliseconds 300
-
-            # Send the text and Enter
-            [System.Windows.Forms.SendKeys]::SendWait('${text.replace(/'/g, "''")}')
-            Start-Sleep -Milliseconds 100
-            [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-            Start-Sleep -Milliseconds 500
-          }
-
-          Write-Output "Sent to $($foundWindows.Count) terminal window(s)"
-        } else {
-          Write-Output "No terminal windows found"
-        }
-      `;
-
-      exec(`powershell -NoProfile -Command "${script.replace(/"/g, '\\"')}"`, (error, stdout) => {
         if (error) {
           log('error', `Failed to send keystrokes: ${error.message}`);
           reject(error);

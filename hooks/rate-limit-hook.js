@@ -21,16 +21,15 @@ const HOME_DIR = os.homedir();
 const STATUS_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
 const STATUS_FILE = path.join(STATUS_DIR, 'status.json');
 
-// Rate limit detection patterns
+// Rate limit detection patterns - must be SPECIFIC to avoid false positives
+// These patterns should only match actual rate limit error messages, not conversation text
 const RATE_LIMIT_PATTERNS = [
-  /You've hit your limit/i,
-  /rate limit/i,
-  /too many requests/i,
-  /resets\s+(\d+)(am|pm)\s*\(([^)]+)\)/i,
-  /try again in\s+(\d+)\s*(minutes?|hours?|seconds?)/i,
-  /"type"\s*:\s*"rate_limit_error"/i,
-  /exceeded your current quota/i,
-  /Rate limit exceeded/i
+  /You've hit your (?:usage )?limit/i,                    // Claude's actual message
+  /resets\s+\d{1,2}(?:am|pm)\s*\([^)]+\)/i,              // "resets 7pm (America/New_York)" - very specific format
+  /"type"\s*:\s*"rate_limit_error"/i,                    // API error JSON
+  /exceeded your current quota/i,                         // API quota error
+  /Request was throttled/i,                               // Throttling message
+  /Too many requests.*retry after/i,                      // Retry-after pattern
 ];
 
 // Time parsing patterns
