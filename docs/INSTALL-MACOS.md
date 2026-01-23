@@ -200,14 +200,6 @@ For manual/interactive use without the daemon:
 chmod +x claude-auto-resume.sh
 ```
 
-### Grant Terminal Accessibility (Shell Script Only)
-
-When using the shell script directly (not the daemon), grant permissions to Terminal:
-
-1. Open **System Settings** > **Privacy & Security** > **Accessibility**
-2. Add **Terminal** (or **iTerm2**) to the list
-3. Ensure it's checked/enabled
-
 ### Run the Script
 
 ```bash
