@@ -35,6 +35,7 @@ esac
 CLAUDE_DIR="${HOME}/.claude"
 HOOKS_DIR="${CLAUDE_DIR}/hooks"
 AUTO_RESUME_DIR="${CLAUDE_DIR}/auto-resume"
+PLUGIN_CACHE_DIR="${CLAUDE_DIR}/plugins/cache/auto-claude-resume"
 SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
 
 # Source files (in same directory as installer)
@@ -534,6 +535,13 @@ uninstall() {
     rm -f "$PACKAGE_DEST"
     rm -rf "$AUTO_RESUME_DIR"
     log_success "Plugin files removed"
+
+    # Remove plugin cache
+    if [[ -d "$PLUGIN_CACHE_DIR" ]]; then
+        log_step "Removing plugin cache..."
+        rm -rf "$PLUGIN_CACHE_DIR"
+        log_success "Plugin cache removed: $PLUGIN_CACHE_DIR"
+    fi
 
     # Remove hook from settings.json
     if [[ -f "$SETTINGS_FILE" ]]; then

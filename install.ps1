@@ -54,6 +54,7 @@ $AUTO_RESUME_DIR = Join-Path $CLAUDE_DIR "auto-resume"
 $HOOKS_DIR = Join-Path $CLAUDE_DIR "hooks"
 $SETTINGS_FILE = Join-Path $CLAUDE_DIR "settings.json"
 $STARTUP_FOLDER = [Environment]::GetFolderPath('Startup')
+$PLUGIN_CACHE_DIR = Join-Path $CLAUDE_DIR "plugins\cache\auto-claude-resume"
 
 # Source files
 $SCRIPT_DIR = $PSScriptRoot
@@ -437,6 +438,7 @@ function Uninstall-Plugin {
     Write-Host "  • Hook script: $HOOK_DEST"
     Write-Host "  • Daemon script: $DAEMON_DEST"
     Write-Host "  • Auto-resume directory: $AUTO_RESUME_DIR"
+    Write-Host "  • Plugin cache: $PLUGIN_CACHE_DIR"
     Write-Host "  • Settings.json hook configuration"
     Write-Host "  • Startup shortcut (if exists)"
     Write-Host ""
@@ -523,6 +525,12 @@ function Uninstall-Plugin {
     if (Test-Path $AUTO_RESUME_DIR) {
         Remove-Item -Path $AUTO_RESUME_DIR -Recurse -Force
         Write-Success "Removed: $AUTO_RESUME_DIR"
+    }
+
+    # Remove plugin cache
+    if (Test-Path $PLUGIN_CACHE_DIR) {
+        Remove-Item -Path $PLUGIN_CACHE_DIR -Recurse -Force
+        Write-Success "Removed plugin cache: $PLUGIN_CACHE_DIR"
     }
 
     Write-Host ""
