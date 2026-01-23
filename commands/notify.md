@@ -13,12 +13,12 @@ Sends a test notification to verify that desktop notifications are configured co
 Run this command to send a test notification:
 
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js --notify-test
+node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" --notify-test
 ```
 
 **Windows PowerShell:**
 ```powershell
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --notify-test
+node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" --notify-test
 ```
 
 ### Expected Behavior

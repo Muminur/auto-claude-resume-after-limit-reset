@@ -34,12 +34,12 @@ xdg-open ~/.claude/auto-resume/dashboard.html
 **Option 2: Start HTTP server (for live updates):**
 
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js --gui
+node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" --gui
 ```
 
 **Windows PowerShell:**
 ```powershell
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --gui
+node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" --gui
 ```
 
 This starts a local web server on http://localhost:3737 with WebSocket support for live status updates.

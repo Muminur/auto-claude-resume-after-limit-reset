@@ -18,17 +18,17 @@ Test the auto-resume functionality by running a countdown and then sending "cont
 Run this command to test with specified seconds:
 
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js --test $ARGUMENTS
+node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" --test $ARGUMENTS
 ```
 
 **Windows PowerShell:**
 ```powershell
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --test $ARGUMENTS
+node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" --test $ARGUMENTS
 ```
 
 If no argument provided, use 10 seconds:
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js --test 10
+node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" --test 10
 ```
 
 ### Warning

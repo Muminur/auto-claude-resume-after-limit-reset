@@ -11,12 +11,12 @@ View or modify the auto-resume daemon configuration settings.
 ### View Current Config
 
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js --config
+node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" --config
 ```
 
 **Windows PowerShell:**
 ```powershell
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --config
+node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" --config
 ```
 
 ### Edit Config
@@ -78,12 +78,12 @@ notepad "$env:USERPROFILE\.claude\auto-resume\config.json"
 ### Reset to Defaults
 
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js --reset-config
+node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" --reset-config
 ```
 
 **Windows PowerShell:**
 ```powershell
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --reset-config
+node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" --reset-config
 ```
 
 ### Apply Changes
@@ -91,12 +91,12 @@ node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --reset-config
 After editing the config file, restart the daemon:
 
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js restart
+node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" restart
 ```
 
 **Windows PowerShell:**
 ```powershell
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" restart
+node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" restart
 ```
 
 ### Common Configuration Tasks

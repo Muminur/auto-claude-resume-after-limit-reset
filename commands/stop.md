@@ -13,12 +13,12 @@ Stop the running auto-resume daemon.
 Run this command to stop the daemon:
 
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js stop
+node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" stop
 ```
 
 **Windows PowerShell:**
 ```powershell
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" stop
+node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" stop
 ```
 
 ### Expected Output

@@ -13,12 +13,12 @@ Check whether the auto-resume daemon is currently running and view its status.
 Run this command to check status:
 
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js status
+node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" status
 ```
 
 **Windows PowerShell:**
 ```powershell
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" status
+node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" status
 ```
 
 ### Expected Output
@@ -37,4 +37,4 @@ node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" status
 ### Next Steps
 
 - If not running, daemon will auto-start on next Claude Code session
-- Or manually start with: `node ~/.claude/auto-resume/auto-resume-daemon.js start`
+- Or manually start with: `node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" start`

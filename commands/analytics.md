@@ -13,12 +13,12 @@ Shows rate limit statistics, usage patterns, and predictions based on historical
 Run this command to view analytics:
 
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js --analytics
+node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" --analytics
 ```
 
 **Windows PowerShell:**
 ```powershell
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --analytics
+node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" --analytics
 ```
 
 ### Analytics Output
