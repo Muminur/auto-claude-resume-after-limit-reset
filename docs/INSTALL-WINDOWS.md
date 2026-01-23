@@ -8,6 +8,14 @@ Complete guide for installing Auto Claude Resume on Windows 10/11.
 - Claude Code CLI installed
 - Node.js 16+ ([Download](https://nodejs.org/))
 - PowerShell 5.1+ (pre-installed on Windows 10/11)
+- npm 7+ (included with Node.js)
+
+### Dependencies
+
+The daemon automatically installs these npm packages:
+- **chokidar** - File system watcher for config changes
+- **node-notifier** - Native toast notifications
+- **ws** - WebSocket server for dashboard and real-time updates
 
 ---
 
@@ -29,6 +37,35 @@ Open Claude Code and run:
 ```
 
 **That's it!** The daemon will automatically start when you open a new Claude Code session.
+
+### First Run Setup
+
+After installation, complete the initial setup:
+
+```powershell
+# 1. Verify installation
+$daemon = "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js"
+node $daemon status
+
+# 2. Create configuration file (if not already present)
+$configDir = "$env:USERPROFILE\.claude\auto-resume"
+if (!(Test-Path "$configDir\config.json")) {
+    @{
+        "enabled" = $true
+        "checkInterval" = 5000
+        "notificationMethod" = "toast"
+        "websocketPort" = 3847
+        "apiPort" = 3848
+    } | ConvertTo-Json | Set-Content "$configDir\config.json"
+    Write-Host "Configuration file created" -ForegroundColor Green
+}
+
+# 3. Create plugin directory
+New-Item -ItemType Directory -Force -Path "$configDir\plugins" | Out-Null
+
+# 4. Test the daemon
+node $daemon --test 5
+```
 
 ### How It Works
 
@@ -88,6 +125,155 @@ The manual installer will set up hooks and optionally configure Windows Startup 
 
 ---
 
+## Configuration Setup
+
+The daemon reads its configuration from a JSON file in your user profile. Set this up after installation:
+
+### Create Configuration File
+
+```powershell
+# Create the config directory
+$configDir = "$env:USERPROFILE\.claude\auto-resume"
+New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+
+# Create config.json with default settings
+@{
+    "enabled" = $true
+    "checkInterval" = 5000
+    "notificationMethod" = "toast"
+    "websocketPort" = 3847
+    "apiPort" = 3848
+    "dashboard" = @{
+        "enabled" = $true
+        "port" = 3848
+    }
+    "notifications" = @{
+        "enabled" = $true
+        "toastNotifications" = $true
+        "powershellFallback" = $true
+    }
+} | ConvertTo-Json | Set-Content "$configDir\config.json"
+
+Write-Host "Configuration file created at: $configDir\config.json" -ForegroundColor Green
+```
+
+### Configuration Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable/disable the daemon |
+| `checkInterval` | `5000` | Session check interval in milliseconds |
+| `notificationMethod` | `toast` | Notification method: `toast`, `powershell`, or `both` |
+| `websocketPort` | `3847` | WebSocket server port for real-time updates |
+| `apiPort` | `3848` | REST API server port |
+
+---
+
+## Plugin Directory Setup
+
+The daemon supports custom plugins. Set up the plugin directory:
+
+```powershell
+# Create plugin directory
+$pluginDir = "$env:USERPROFILE\.claude\auto-resume\plugins"
+New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
+
+Write-Host "Plugin directory created at: $pluginDir" -ForegroundColor Green
+```
+
+**Plugin Format:** Each plugin should be a Node.js module in its own subdirectory:
+```
+plugins/
+├── my-plugin/
+│   ├── package.json
+│   └── index.js
+└── another-plugin/
+    ├── package.json
+    └── index.js
+```
+
+---
+
+## WebSocket and API Server
+
+The daemon includes a WebSocket and REST API server for dashboard access and programmatic control.
+
+### Default Ports
+
+| Service | Port | Protocol |
+|---------|------|----------|
+| WebSocket Server | 3847 | ws:// |
+| REST API Server | 3848 | http:// |
+| Dashboard GUI | 3848 | http:// |
+
+### Access Dashboard
+
+Once the daemon is running, access the GUI dashboard:
+
+```powershell
+# Open in default browser
+Start-Process "http://localhost:3848"
+```
+
+The dashboard shows:
+- Real-time daemon status
+- Active session monitoring
+- Keystroke logs
+- Configuration settings
+- Plugin management
+- Notification history
+
+---
+
+## Notification Setup for Windows
+
+The daemon supports Windows toast notifications with PowerShell fallback.
+
+### Toast Notifications (Recommended)
+
+Toast notifications appear as native Windows notifications:
+
+```powershell
+# Enable in config
+$configPath = "$env:USERPROFILE\.claude\auto-resume\config.json"
+$config = Get-Content $configPath | ConvertFrom-Json
+$config.notifications.toastNotifications = $true
+$config | ConvertTo-Json | Set-Content $configPath
+
+Write-Host "Toast notifications enabled" -ForegroundColor Green
+```
+
+Requirements:
+- Windows 10 or Windows 11
+- Notification Center enabled (default)
+
+### PowerShell Fallback
+
+If toast notifications fail, the daemon automatically falls back to PowerShell notifications:
+
+```powershell
+# Enable fallback in config
+$configPath = "$env:USERPROFILE\.claude\auto-resume\config.json"
+$config = Get-Content $configPath | ConvertFrom-Json
+$config.notifications.powershellFallback = $true
+$config | ConvertTo-Json | Set-Content $configPath
+
+Write-Host "PowerShell fallback enabled" -ForegroundColor Green
+```
+
+PowerShell notifications use the `[System.Windows.Forms.MessageBox]` class and appear as traditional popup dialogs.
+
+### Notification Events
+
+The daemon sends notifications for:
+- Session started/ended
+- Rate limit detected
+- Keystroke sequence sent
+- Daemon errors or warnings
+- Plugin events
+
+---
+
 ## Daemon Management
 
 The daemon auto-starts with Claude Code, but you can manage it manually:
@@ -110,6 +296,23 @@ Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 50
 
 # Watch logs in real-time
 Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Wait -Tail 20
+```
+
+### WebSocket Server Commands
+
+Connect to the WebSocket server to monitor real-time events:
+
+```powershell
+# Example using node ws client
+npm install -g ws
+
+# Connect to WebSocket
+wscat -c ws://localhost:3847
+
+# Messages received include:
+# {"type":"statusUpdate","status":"idle"}
+# {"type":"keystrokeSent","keys":"Enter"}
+# {"type":"notification","message":"..."}
 ```
 
 ---
@@ -152,6 +355,66 @@ The daemon sends keystrokes to terminal windows. Ensure:
 1. Claude Code is running in a terminal window (Windows Terminal, PowerShell, CMD)
 2. The terminal window is not minimized
 3. Try running PowerShell as Administrator
+
+### Dashboard Not Accessible
+
+If the dashboard won't open on http://localhost:3848:
+
+```powershell
+# Check if API server is running
+$daemon = "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js"
+node $daemon status
+
+# Check if port 3848 is already in use
+Get-NetTCPConnection -LocalPort 3848 -ErrorAction SilentlyContinue
+
+# Try a different port in config.json
+$configPath = "$env:USERPROFILE\.claude\auto-resume\config.json"
+$config = Get-Content $configPath | ConvertFrom-Json
+$config.apiPort = 3849
+$config | ConvertTo-Json | Set-Content $configPath
+
+# Restart daemon
+node $daemon restart
+```
+
+### Toast Notifications Not Showing
+
+If Windows notifications aren't appearing:
+
+```powershell
+# 1. Check notification settings
+Start-Process ms-settings:notifications
+
+# 2. Ensure PowerShell fallback is enabled in config
+$configPath = "$env:USERPROFILE\.claude\auto-resume\config.json"
+$config = Get-Content $configPath | ConvertFrom-Json
+$config.notifications.powershellFallback = $true
+$config | ConvertTo-Json | Set-Content $configPath
+
+# 3. Restart daemon
+node $daemon restart
+```
+
+### WebSocket Connection Failures
+
+If WebSocket events aren't being received:
+
+```powershell
+# Verify WebSocket server is listening on port 3847
+netstat -ano | Select-String ":3847"
+
+# Check daemon logs for WebSocket errors
+Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" | Select-String "WebSocket"
+
+# Try restarting on a different port
+$configPath = "$env:USERPROFILE\.claude\auto-resume\config.json"
+$config = Get-Content $configPath | ConvertFrom-Json
+$config.websocketPort = 3850
+$config | ConvertTo-Json | Set-Content $configPath
+
+node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" restart
+```
 
 ---
 

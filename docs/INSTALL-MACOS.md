@@ -11,6 +11,16 @@ Complete guide for installing Auto Claude Resume on macOS (Monterey, Ventura, So
 
 **Note:** macOS includes all required tools (`osascript`, `pbpaste`) by default.
 
+## Core Dependencies
+
+The following Node.js packages are automatically installed:
+
+- **chokidar** - File system watcher for monitoring resume file changes
+- **node-notifier** - Native macOS notifications (integrates with Notification Center)
+- **ws** - WebSocket server for real-time dashboard updates
+
+These are installed automatically during setup and do not require manual configuration.
+
 ---
 
 ## Method 1: Claude Code Plugin (Recommended)
@@ -41,9 +51,112 @@ The plugin registers a **SessionStart hook** that:
 
 You don't need to configure launchd or any auto-start mechanism - the plugin handles everything!
 
+## Configuration and Setup
+
+### Configuration File
+
+The daemon stores its configuration at:
+```
+~/.claude/auto-resume/config.json
+```
+
+During installation, this file is created automatically with default settings. You can customize:
+
+```json
+{
+  "checkInterval": 5000,
+  "notificationsEnabled": true,
+  "dashboardPort": 3848,
+  "apiServerPort": 3847,
+  "pluginDirectory": "~/.claude/auto-resume/plugins/",
+  "logLevel": "info"
+}
+```
+
+**Configuration Options:**
+- `checkInterval` - How often to check for rate limit (milliseconds)
+- `notificationsEnabled` - Enable macOS notifications
+- `dashboardPort` - Web dashboard port (default: 3848)
+- `apiServerPort` - REST API server port (default: 3847)
+- `pluginDirectory` - Location for custom plugins
+- `logLevel` - Logging verbosity (debug, info, warn, error)
+
+### Plugin Directory Setup
+
+The daemon supports custom plugins. Create the plugins directory:
+
+```bash
+mkdir -p ~/.claude/auto-resume/plugins/
+```
+
+Place custom plugin files (JavaScript) in this directory. The daemon will auto-load them on startup.
+
+### Notification Setup (Native macOS Notifications)
+
+The daemon integrates with macOS Notification Center via `node-notifier`. Notifications are enabled by default and include:
+
+- **Rate limit detected** - Notifies when a rate limit is triggered
+- **Resume successful** - Confirms successful resume action
+- **Daemon started** - Indicates daemon is running
+
+To configure notifications in macOS:
+
+1. Open **System Settings** > **Notifications**
+2. Find **Node.js** in the list
+3. Ensure **Allow Notifications** is enabled
+4. Choose your preferred notification style (banners or alerts)
+
+If notifications are not appearing, verify Node.js accessibility permissions are granted (see below).
+
+### API Server and Dashboard Access
+
+The daemon runs two servers on fixed ports:
+
+- **API Server:** `http://localhost:3847`
+- **Dashboard:** `http://localhost:3848`
+
+#### Web Dashboard
+
+Access the GUI dashboard in your browser:
+```
+http://localhost:3848
+```
+
+The dashboard provides:
+- Real-time daemon status
+- Resume history and logs
+- Configuration editing
+- Plugin management
+- Performance metrics
+
+#### REST API
+
+Interact with the daemon via REST API (port 3847):
+
+```bash
+# Check daemon status
+curl http://localhost:3847/status
+
+# Get resume history
+curl http://localhost:3847/history
+
+# View current config
+curl http://localhost:3847/config
+```
+
+See [API Documentation](./API.md) for complete endpoint reference.
+
 ### Grant Accessibility Permissions (Required)
 
-**Critical:** The daemon sends keystrokes using `osascript`. You must grant accessibility permissions to **Node.js**.
+**Critical:** The daemon sends keystrokes using `osascript` and accesses the clipboard. You must grant accessibility permissions to **Node.js**.
+
+#### Why Accessibility Permissions Are Needed
+
+- `osascript` - Sends keystroke sequences to simulate "continue" + Enter
+- Clipboard access - Reads/writes to pasteboard
+- Event simulation - Requires system event access
+
+#### Step-by-Step Instructions
 
 1. Find your Node.js binary path:
    ```bash
@@ -67,6 +180,16 @@ You don't need to configure launchd or any auto-start mechanism - the plugin han
 
 7. Ensure the **checkbox is enabled** next to node
 
+#### Verify Accessibility Permissions
+
+```bash
+# List applications with accessibility permissions
+system_profiler SPConfigurationProfileDataType | grep -A 5 "Accessibility"
+
+# Or check Terminal for accessibility status
+cat ~/Library/Preferences/com.apple.universalaccessAuthWarning.plist
+```
+
 ### Verify Installation (Optional)
 
 ```bash
@@ -75,6 +198,15 @@ cat ~/.claude/settings.json | grep -A5 "SessionStart"
 
 # Check daemon status
 node ~/.claude/auto-resume/auto-resume-daemon.js status
+
+# Check configuration file exists
+cat ~/.claude/auto-resume/config.json
+
+# Verify plugin directory
+ls -la ~/.claude/auto-resume/plugins/
+
+# Check WebSocket and API servers are running
+netstat -an | grep -E '3847|3848'
 
 # View logs
 tail -20 ~/.claude/auto-resume/daemon.log
@@ -118,7 +250,12 @@ chmod +x install.sh
 ./install.sh
 ```
 
-The manual installer will set up hooks and optionally configure launchd for you.
+The manual installer will:
+- Install Node.js dependencies (chokidar, node-notifier, ws)
+- Create configuration file at `~/.claude/auto-resume/config.json`
+- Create plugin directory at `~/.claude/auto-resume/plugins/`
+- Set up hooks for automatic daemon startup
+- Optionally configure launchd for background execution
 
 ### Step 4: Grant Accessibility Permissions
 
@@ -217,6 +354,55 @@ cat ~/.claude/settings.json | grep -A5 "SessionStart"
 
 If not present, try reinstalling the plugin.
 
+### Dashboard or API Server Not Accessible
+
+**Error:** Cannot connect to `http://localhost:3847` or `http://localhost:3848`
+
+**Solution:**
+
+1. Verify daemon is running:
+   ```bash
+   node ~/.claude/auto-resume/auto-resume-daemon.js status
+   ```
+
+2. Check ports are not in use:
+   ```bash
+   lsof -i :3847
+   lsof -i :3848
+   ```
+
+3. If ports are occupied, modify `config.json`:
+   ```bash
+   nano ~/.claude/auto-resume/config.json
+   # Change dashboardPort and apiServerPort to available ports
+   ```
+
+4. Restart daemon:
+   ```bash
+   node ~/.claude/auto-resume/auto-resume-daemon.js restart
+   ```
+
+### Notifications Not Appearing
+
+**Solution:**
+
+1. Verify `notificationsEnabled` is `true` in config:
+   ```bash
+   cat ~/.claude/auto-resume/config.json | grep notificationsEnabled
+   ```
+
+2. Check Node.js notification permissions:
+   - **System Settings** > **Notifications**
+   - Find **Node.js** in the list
+   - Ensure **Allow Notifications** is enabled
+
+3. Grant accessibility permissions (see "Grant Accessibility Permissions" section)
+
+4. Restart daemon:
+   ```bash
+   node ~/.claude/auto-resume/auto-resume-daemon.js restart
+   ```
+
 ### Permission Denied
 
 ```bash
@@ -254,9 +440,24 @@ ls -la ~/.claude/hooks/rate-limit-hook.js
 # Stop daemon
 node ~/.claude/auto-resume/auto-resume-daemon.js stop
 
-# Remove files
+# Remove all installation files and data
 rm -rf ~/.claude/auto-resume
 rm -f ~/.claude/hooks/rate-limit-hook.js
 
-# Optionally remove Node.js from Accessibility (System Settings)
+# Remove Node.js from Accessibility (System Settings)
+# Go to System Settings > Privacy & Security > Accessibility
+# Find Node.js and click the remove (-) button
 ```
+
+---
+
+## Next Steps
+
+After successful installation:
+
+1. **Access the Dashboard** - Open `http://localhost:3848` in your browser
+2. **Review Configuration** - Check `~/.claude/auto-resume/config.json`
+3. **Set Up Custom Plugins** (optional) - Add scripts to `~/.claude/auto-resume/plugins/`
+4. **Read the API Documentation** - See [API.md](./API.md) for available endpoints
+
+For additional support, see the [Troubleshooting Guide](#troubleshooting) or open an issue on GitHub.

@@ -2,7 +2,7 @@
 
 A Claude Code plugin that automatically resumes your sessions when rate limits reset.
 
-## Features
+## Core Features
 
 - **Automatic Detection**: Detects rate limits without any user intervention
 - **Auto-Resume**: Sends "continue" to your terminal when limits reset
@@ -10,6 +10,129 @@ A Claude Code plugin that automatically resumes your sessions when rate limits r
 - **Background Daemon**: Runs silently, always ready to resume your sessions
 - **Cross-Platform**: Windows, Linux, macOS support
 - **Zero Configuration**: Just install and forget
+
+## New Features
+
+### 1. Configuration System (`config-manager.js`)
+Manage all plugin settings via a centralized configuration file:
+- Resume prompt customization
+- Check interval adjustment
+- Log level control
+- Notification preferences
+- WebSocket and REST API configuration
+- Analytics retention settings
+- Plugin directory management
+
+### 2. Desktop Notifications (`notification-manager.js`)
+Receive desktop notifications for all events:
+- Rate limit detection alerts with time remaining
+- Session resume notifications
+- Windows PowerShell fallback for reliability
+- Configurable sound and timeout options
+- Cross-platform support (Windows, macOS, Linux)
+
+### 3. Multiple Status File Watching (`status-watcher.js`)
+Monitor multiple Claude Code sessions simultaneously:
+- Watch multiple status.json files at once
+- Real-time status aggregation
+- Event-based notifications for rate limit changes
+- Automatic session detection and labeling
+- Graceful error handling
+
+### 4. WebSocket Real-time Updates (`websocket-server.js`)
+Real-time data streaming to connected clients:
+- Live session status updates
+- Rate limit countdown timers
+- Analytics data streaming
+- Web GUI dashboard integration
+- Configurable port and auto-reconnection
+
+### 5. REST API Endpoint (`api-server.js`)
+Full-featured HTTP API for external integration:
+- Query daemon status and sessions
+- Manual session resume triggers
+- Configuration management endpoints
+- Analytics data retrieval
+- Daemon control commands
+
+### 6. Rate Limit Analytics & Prediction (`analytics-collector.js`)
+Deep insights into your rate limit patterns:
+- Track rate limit events and resume history
+- Statistical analysis (averages, peaks, trends)
+- Predictive modeling for next rate limit
+- Historical data export and cleanup
+- 30-day data retention (configurable)
+
+### 7. Plugin System (`plugin-loader.js`)
+Extend functionality with custom plugins:
+- Hook system for custom actions
+- Plugins for rate limit events, resume, status changes
+- Plugin discovery and lifecycle management
+- JavaScript plugin development support
+- Example plugins included (log-to-file, slack-notify, console-logger)
+
+### 8. Web GUI Dashboard (`gui/`)
+Beautiful cyberpunk-themed monitoring interface:
+- Real-time session monitoring with countdowns
+- Rate limit analytics and charts
+- Interactive configuration panel
+- Quick action buttons
+- WebSocket-powered live updates
+- Dark theme with neon accents
+
+## New Commands
+
+### Configuration Management
+```
+/auto-resume:config [--get <key>] [--set <key> <value>] [--reset]
+```
+
+Access and modify plugin configuration:
+```bash
+# View all configuration
+/auto-resume:config --get
+
+# View specific setting
+/auto-resume:config --get notifications.enabled
+
+# Update a setting
+/auto-resume:config --set notifications.enabled true
+
+# Reset to defaults
+/auto-resume:config --reset
+```
+
+### Web Dashboard
+```
+/auto-resume:gui
+```
+
+Open the web-based monitoring dashboard. Displays real-time sessions, analytics, and controls.
+
+### View Analytics
+```
+/auto-resume:analytics [--format json|text] [--days 7|30|all]
+```
+
+Display statistics and predictions:
+```bash
+# Show last 7 days of analytics
+/auto-resume:analytics --days 7
+
+# Export as JSON
+/auto-resume:analytics --format json
+```
+
+### Test Notifications
+```
+/auto-resume:notify [--title <text>] [--message <text>]
+```
+
+Test desktop notification system:
+```bash
+# Send test notification
+/auto-resume:notify --title "Test" --message "Notifications working!"
+```
 
 ## Installation
 
@@ -77,6 +200,87 @@ If you prefer manual installation, see the platform-specific guides:
    - Waits until reset time
    - Sends "continue" to terminal automatically
 
+## Configuration
+
+Configure the plugin via `~/.claude/auto-resume/config.json`:
+
+```json
+{
+  "resumePrompt": "continue",
+  "menuSelection": "1",
+  "checkInterval": 5000,
+  "logLevel": "info",
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "websocket": {
+    "enabled": false,
+    "port": 3847
+  },
+  "api": {
+    "enabled": false,
+    "port": 3848
+  },
+  "analytics": {
+    "enabled": true,
+    "retentionDays": 30
+  },
+  "watchPaths": [],
+  "plugins": {
+    "enabled": false,
+    "directory": "~/.claude/auto-resume/plugins"
+  }
+}
+```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `resumePrompt` | string | `"continue"` | Text to send when resuming |
+| `menuSelection` | string | `"1"` | Default menu choice |
+| `checkInterval` | number | `5000` | Check status every N milliseconds |
+| `logLevel` | string | `"info"` | Log level: debug, info, warn, error |
+| `notifications.enabled` | boolean | `true` | Enable desktop notifications |
+| `notifications.sound` | boolean | `false` | Play sound with notifications |
+| `websocket.enabled` | boolean | `false` | Enable WebSocket server |
+| `websocket.port` | number | `3847` | WebSocket server port |
+| `api.enabled` | boolean | `false` | Enable REST API server |
+| `api.port` | number | `3848` | REST API server port |
+| `analytics.enabled` | boolean | `true` | Enable analytics collection |
+| `analytics.retentionDays` | number | `30` | Days to keep analytics data |
+| `watchPaths` | array | `[]` | Additional status.json paths to monitor |
+| `plugins.enabled` | boolean | `false` | Enable plugin system |
+| `plugins.directory` | string | `~/.claude/auto-resume/plugins` | Plugin directory path |
+
+## GUI Dashboard
+
+A visually stunning cyberpunk-themed dashboard is available for monitoring and controlling the daemon:
+
+**Quick Start:**
+```bash
+# Open the dashboard in your browser
+# Windows
+start gui/index.html
+
+# macOS
+open gui/index.html
+
+# Linux
+xdg-open gui/index.html
+```
+
+**Features:**
+- Real-time session monitoring with countdown timers
+- Rate limit analytics and visualization
+- Interactive configuration panel
+- Quick actions (start/stop daemon, manual resume)
+- WebSocket-powered live updates
+- Beautiful dark theme with neon accents
+
+See [gui/README.md](gui/README.md) for detailed documentation.
+
 ## Daemon Management
 
 The daemon auto-starts, but you can manage it manually if needed:
@@ -128,6 +332,85 @@ The plugin:
 3. Daemon displays countdown
 4. At reset time, sends "continue" to your terminal
 5. Session resumes automatically
+
+## Plugin Development
+
+Extend the plugin with custom actions by creating plugins in `~/.claude/auto-resume/plugins/`.
+
+### Plugin Structure
+
+Create a directory for your plugin with an `index.js` file:
+
+```
+~/.claude/auto-resume/plugins/
+├── my-plugin/
+│   └── index.js
+└── another-plugin/
+    └── index.js
+```
+
+### Basic Plugin Example
+
+```javascript
+// ~/.claude/auto-resume/plugins/my-plugin/index.js
+module.exports = {
+  name: 'my-plugin',
+  version: '1.0.0',
+  description: 'My custom auto-resume plugin',
+
+  hooks: {
+    onRateLimitDetected: async (event) => {
+      console.log('Rate limit detected!', event);
+      // Your custom logic here
+    },
+
+    onResumeSent: async (event) => {
+      console.log('Resume sent!', event);
+      // Your custom logic here
+    },
+
+    onStatusChange: async (status) => {
+      console.log('Status changed:', status);
+    },
+
+    onDaemonStart: async () => {
+      console.log('Daemon started');
+    },
+
+    onDaemonStop: async () => {
+      console.log('Daemon stopped');
+    }
+  }
+};
+```
+
+### Available Hooks
+
+| Hook | Triggered | Event Object |
+|------|-----------|--------------|
+| `onRateLimitDetected` | When rate limit is detected | `{ timestamp, resetTime, session }` |
+| `onResumeSent` | After resume prompt is sent | `{ timestamp, session, success }` |
+| `onStatusChange` | When session status changes | `{ sessionId, status, previousStatus }` |
+| `onDaemonStart` | When daemon starts | `{ timestamp }` |
+| `onDaemonStop` | When daemon stops | `{ timestamp }` |
+
+### Example Plugins Included
+
+The plugin system includes example plugins:
+- **console-logger**: Logs events to console
+- **log-to-file**: Writes events to a log file
+- **slack-notify**: Posts notifications to Slack webhook
+
+Enable plugins in `config.json`:
+
+```json
+{
+  "plugins": {
+    "enabled": true,
+    "directory": "~/.claude/auto-resume/plugins"
+  }
+}
+```
 
 ## Troubleshooting
 
@@ -201,12 +484,35 @@ Or use the manual uninstall scripts:
 ./install.sh --uninstall
 ```
 
+## Cross-Platform Support
+
+This plugin is fully compatible with:
+
+### Windows
+- Auto-resume via PowerShell keystroke injection
+- Desktop notifications via Windows notification system
+- Alternative MessageBox fallback for reliability
+- Full WebSocket and API server support
+
+### macOS
+- Auto-resume via osascript keystroke events
+- Desktop notifications via native macOS notification system
+- Accessibility permission required (automatic prompt)
+- Full feature support
+
+### Linux
+- Auto-resume via xdotool (requires system package)
+- Desktop notifications via notify-send/dbus
+- Full WebSocket and API server support
+- Tested on Ubuntu, Debian, CentOS, Arch
+
 ## Requirements
 
 - Claude Code CLI
 - Node.js 16+
 - Linux: xdotool (for keystroke sending)
 - macOS: Accessibility permission for Node.js
+- Optional: npm packages for enhanced features (node-notifier, ws, chokidar)
 
 ## License
 

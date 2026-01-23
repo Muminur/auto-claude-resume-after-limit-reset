@@ -9,6 +9,14 @@ Complete guide for installing Auto Claude Resume on Linux (Ubuntu, Debian, Fedor
 - Node.js 16+ ([Installation guide](https://nodejs.org/en/download/package-manager))
 - `xdotool` (for sending keystrokes)
 
+### Required npm Packages
+
+The following packages are automatically installed by the plugin but listed here for reference:
+
+- `chokidar` - File system monitoring for plugin directory changes
+- `node-notifier` - Desktop notifications (Linux, macOS, Windows)
+- `ws` - WebSocket server for GUI dashboard communication
+
 ---
 
 ## Method 1: Claude Code Plugin (Recommended)
@@ -38,14 +46,21 @@ sudo pacman -S xdotool
 sudo zypper install xdotool
 ```
 
-### Step 2: Add the Marketplace
+### Step 2: Create Configuration Directory
+
+```bash
+mkdir -p ~/.claude/auto-resume
+mkdir -p ~/.claude/auto-resume/plugins
+```
+
+### Step 3: Add the Marketplace
 
 Open Claude Code and run:
 ```
 /plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
 ```
 
-### Step 3: Install the Plugin
+### Step 4: Install the Plugin
 
 ```
 /plugin install auto-resume
@@ -62,6 +77,78 @@ The plugin registers a **SessionStart hook** that:
 
 You don't need to configure systemd or any auto-start mechanism - the plugin handles everything!
 
+### Configuration Setup
+
+The plugin uses a configuration file for customization. Create `~/.claude/auto-resume/config.json`:
+
+```json
+{
+  "notificationSystem": "notify-send",
+  "websocketPort": 3847,
+  "apiPort": 3848,
+  "dashboardUrl": "http://localhost:3847",
+  "pluginDirectory": "~/.claude/auto-resume/plugins",
+  "enableNotifications": true,
+  "logLevel": "info"
+}
+```
+
+**Key settings:**
+- `notificationSystem`: Use `notify-send` on Linux (installed with: `sudo apt install libnotify-bin`)
+- `websocketPort`: WebSocket server port for dashboard real-time updates
+- `apiPort`: REST API server port for daemon communication
+- `dashboardUrl`: GUI dashboard access URL (local browser)
+- `pluginDirectory`: Location for custom plugins and extensions
+- `enableNotifications`: Set to `false` to disable desktop notifications
+
+### Enable Desktop Notifications
+
+Desktop notifications require `notify-send` on Linux:
+
+```bash
+# Ubuntu/Debian
+sudo apt install libnotify-bin
+
+# Fedora
+sudo dnf install libnotify
+
+# Arch
+sudo pacman -S libnotify
+```
+
+### Access the GUI Dashboard
+
+Once the daemon is running, access the web interface:
+
+```bash
+# Open in browser automatically
+xdg-open http://localhost:3847
+
+# Or manually visit in your browser
+# http://localhost:3847
+```
+
+The dashboard provides:
+- Real-time daemon status and monitoring
+- Session history and resume logs
+- Configuration management UI
+- Plugin management interface
+- Performance metrics and statistics
+
+### Plugin Directory Setup
+
+Custom plugins are loaded from `~/.claude/auto-resume/plugins/`:
+
+```bash
+# Create plugin structure
+mkdir -p ~/.claude/auto-resume/plugins/{hooks,extensions}
+
+# Place custom plugins here
+# Example: ~/.claude/auto-resume/plugins/hooks/custom-hook.js
+```
+
+Plugins are automatically discovered and loaded by the daemon. Changes are monitored via `chokidar` file watcher.
+
 ### Verify Installation (Optional)
 
 ```bash
@@ -73,6 +160,12 @@ node ~/.claude/auto-resume/auto-resume-daemon.js status
 
 # View logs
 tail -20 ~/.claude/auto-resume/daemon.log
+
+# Check API server status
+curl http://localhost:3848/health
+
+# Check WebSocket connection
+curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" http://localhost:3847
 ```
 
 ### Test the Installation
@@ -120,6 +213,29 @@ The manual installer will set up hooks and optionally configure systemd for you.
 
 ---
 
+## Server Ports
+
+The daemon runs two servers for communication and monitoring:
+
+| Port | Service | Purpose |
+|------|---------|---------|
+| `3847` | WebSocket Server | Real-time updates for GUI dashboard |
+| `3848` | REST API Server | Daemon control and status endpoints |
+
+Both servers bind to `127.0.0.1` (localhost only) for security.
+
+### Check Server Status
+
+```bash
+# Check if servers are listening
+netstat -tlnp | grep -E '3847|3848'
+
+# Alternative (on systems without netstat)
+ss -tlnp | grep -E '3847|3848'
+```
+
+---
+
 ## Daemon Management
 
 The daemon auto-starts with Claude Code, but you can manage it manually:
@@ -142,11 +258,69 @@ tail -f ~/.claude/auto-resume/daemon.log
 
 # View last 50 lines
 tail -50 ~/.claude/auto-resume/daemon.log
+
+# Check API health endpoint
+curl http://localhost:3848/health
 ```
 
 ---
 
 ## Troubleshooting
+
+### Dashboard Not Accessible
+
+If the GUI dashboard at `http://localhost:3847` is not accessible:
+
+```bash
+# Check if WebSocket server is running
+curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" http://localhost:3847
+
+# Check firewall (should be localhost-only, but verify)
+sudo ufw status | grep 3847
+sudo ufw status | grep 3848
+
+# Restart daemon to ensure servers start
+node ~/.claude/auto-resume/auto-resume-daemon.js restart
+
+# Check daemon logs for server startup errors
+tail -20 ~/.claude/auto-resume/daemon.log | grep -i "server\|port\|listen"
+```
+
+### Notifications Not Showing
+
+If desktop notifications are not appearing:
+
+```bash
+# Verify notify-send is installed
+which notify-send
+
+# Test notification manually
+notify-send "Test" "Notification from Auto Resume"
+
+# Check daemon notification config
+cat ~/.claude/auto-resume/config.json | grep -i notification
+
+# Ensure notifications are enabled
+# Edit ~/.claude/auto-resume/config.json and set "enableNotifications": true
+```
+
+### Plugin Directory Issues
+
+If plugins are not loading:
+
+```bash
+# Verify plugin directory exists
+ls -la ~/.claude/auto-resume/plugins/
+
+# Check file permissions
+stat ~/.claude/auto-resume/plugins/
+
+# View daemon logs for plugin loading errors
+grep -i "plugin\|chokidar" ~/.claude/auto-resume/daemon.log
+
+# Manually restart daemon to reload plugins
+node ~/.claude/auto-resume/auto-resume-daemon.js restart
+```
 
 ### Plugin Not Showing in /plugin
 

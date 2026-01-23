@@ -1,0 +1,15 @@
+{
+  "name": "auto-resume-slack-notify",
+  "version": "1.0.0",
+  "description": "Sends Slack notifications for rate limits",
+  "main": "index.js",
+  "keywords": [
+    "claude-code",
+    "auto-resume",
+    "plugin",
+    "slack",
+    "notifications"
+  ],
+  "author": "",
+  "license": "MIT"
+}

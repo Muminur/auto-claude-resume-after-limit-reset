@@ -339,7 +339,7 @@ Write-Output "Sent 1, then continue + Enter to current window"
       });
     } else {
       // Linux: Use xdotool to find and send to terminal windows
-      exec('which xdotool', (error) => {
+      exec('command -v xdotool', (error) => {
         if (error) {
           log('error', 'xdotool not found. Please install it:');
           log('info', '  Ubuntu/Debian: sudo apt-get install xdotool');

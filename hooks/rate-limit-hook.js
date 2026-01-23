@@ -115,7 +115,7 @@ function parseResetTime(message) {
 
     return {
       reset_time: resetDate.toISOString(),
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Dhaka'
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
     };
   }
 
@@ -124,7 +124,7 @@ function parseResetTime(message) {
   if (isoMatch) {
     return {
       reset_time: isoMatch[1],
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Dhaka'
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
     };
   }
 
@@ -134,7 +134,7 @@ function parseResetTime(message) {
 
   return {
     reset_time: defaultReset.toISOString(),
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Dhaka'
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   };
 }
 
