@@ -638,6 +638,48 @@ function showBanner() {
 }
 
 /**
+ * Run test mode - simulate countdown and send keystrokes
+ * @param {number} seconds - Number of seconds to wait
+ */
+async function runTest(seconds) {
+  showBanner();
+  log('warning', `[TEST MODE] Simulating rate limit with ${seconds} second countdown`);
+  log('warning', 'WARNING: This will send "continue" + Enter to terminal windows!');
+  log('info', '');
+
+  const resetTime = new Date(Date.now() + seconds * 1000);
+
+  return new Promise((resolve) => {
+    const testInterval = setInterval(() => {
+      const now = new Date();
+      const remaining = resetTime - now;
+
+      if (remaining <= 0) {
+        clearInterval(testInterval);
+        process.stdout.write(
+          `\r${colors.green}[TEST] Countdown complete! Sending keystrokes...${colors.reset}\n`
+        );
+
+        sendContinueToTerminals()
+          .then(() => {
+            log('success', '[TEST] Test completed successfully!');
+            resolve();
+          })
+          .catch((err) => {
+            log('error', `[TEST] Failed to send keystrokes: ${err.message}`);
+            resolve();
+          });
+      } else {
+        const formatted = formatTimeRemaining(remaining);
+        process.stdout.write(
+          `\r${colors.yellow}[TEST] Sending "continue" in ${formatted}...${colors.reset}`
+        );
+      }
+    }, 1000);
+  });
+}
+
+/**
  * Show help
  */
 function showHelp() {
@@ -651,6 +693,7 @@ COMMANDS:
     stop        Stop the running daemon
     status      Check daemon status
     restart     Restart the daemon
+    --test <s>  Test mode: countdown for <s> seconds then send keystrokes
     help        Show this help message
 
 DAEMON BEHAVIOR:
@@ -689,6 +732,9 @@ EXAMPLES:
 
     # Restart daemon
     node auto-resume-daemon.js restart
+
+    # Test with 10 second countdown
+    node auto-resume-daemon.js --test 10
 
 FILES:
     Status:  ${STATUS_FILE}
@@ -733,6 +779,15 @@ function main() {
     case '-h':
       showHelp();
       process.exit(0);
+      break;
+
+    case '--test':
+    case '-t':
+    case 'test':
+      const testSeconds = parseInt(args[1], 10) || 30;
+      runTest(testSeconds).then(() => {
+        process.exit(0);
+      });
       break;
 
     default:
