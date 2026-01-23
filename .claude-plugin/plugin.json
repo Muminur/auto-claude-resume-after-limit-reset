@@ -1,0 +1,9 @@
+{
+  "name": "auto-resume",
+  "version": "1.1.0",
+  "description": "Automatically resume Claude Code sessions when rate limits reset",
+  "author": {
+    "name": "Muminur",
+    "email": "muminur@example.com"
+  }
+}

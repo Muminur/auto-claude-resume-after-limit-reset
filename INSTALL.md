@@ -1,225 +1,270 @@
 # Installation Guide
 
-This guide covers the automated installation process for the Claude Code Auto-Resume Plugin on Windows.
+This guide covers all installation methods for the Auto Claude Resume plugin.
 
-## Quick Install
+---
 
-### Step 1: Download or Clone the Repository
+## Quick Install via Plugin (All Platforms)
 
-**Option A: Using Git**
-```powershell
-git clone https://github.com/your-username/auto-claude-resume.git
-cd auto-claude-resume
+Steps 1 and 2 are **identical** for Windows, macOS, and Linux.
+
+### Step 1: Add the Marketplace
+
+In Claude Code, run:
+```
+/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
 ```
 
-**Option B: Download ZIP**
-1. Download the repository as a ZIP file
-2. Extract to your desired location
-3. Open PowerShell and navigate to the extracted folder
-
-### Step 2: Run the Installer
-
-Open PowerShell in the plugin directory and run:
-
-```powershell
-.\install.ps1
-```
-
-The installer will:
-1. Check if Node.js is installed (optional but recommended)
-2. Create the required directory structure
-3. Copy hook and daemon scripts
-4. Update Claude Code settings.json
-5. Create a startup script
-6. Optionally add the daemon to Windows startup
-
-## What Gets Installed
-
-### Directory Structure
+### Step 2: Install the Plugin
 
 ```
-%USERPROFILE%\.claude\
-├── auto-resume\
-│   ├── auto-resume-daemon.js     # Main daemon script
-│   ├── package.json               # Dependencies
-│   ├── status.json                # Rate limit status (created at runtime)
-│   └── start-daemon.ps1          # Startup script
-└── hooks\
-    └── rate-limit-hook.js        # Claude Code Stop hook
+/plugin install auto-resume
 ```
 
-### Settings Configuration
+### Step 3: Start the Daemon
 
-The installer updates `~/.claude/settings.json` with:
+The plugin installs hooks automatically, but you need to start the background daemon.
 
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"%USERPROFILE%\\.claude\\hooks\\rate-limit-hook.js\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-## Starting the Daemon
-
-### Method 1: Manual Start
+#### Windows (PowerShell)
 
 ```powershell
-node "%USERPROFILE%\.claude\auto-resume\auto-resume-daemon.js" -m
+# Find and start the daemon
+$daemonPath = Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\*\auto-claude-resume-after-limit-reset\*\auto-resume-daemon.js" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+node $daemonPath start
 ```
 
-### Method 2: Using Startup Script
+#### macOS (Terminal)
+
+```bash
+# Find and start the daemon
+daemon_path=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" -path "*auto-claude-resume*" 2>/dev/null | head -1)
+node "$daemon_path" start
+```
+
+#### Linux (Terminal)
+
+```bash
+# Find and start the daemon
+daemon_path=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" -path "*auto-claude-resume*" 2>/dev/null | head -1)
+node "$daemon_path" start
+```
+
+### Step 4: Verify Installation
+
+#### Windows (PowerShell)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "%USERPROFILE%\.claude\auto-resume\start-daemon.ps1"
+# Check if hooks are registered
+Get-Content "$env:USERPROFILE\.claude\settings.json" | Select-String "rate-limit"
+
+# Check daemon status (use the path from Step 3)
+node $daemonPath status
+
+# View logs
+Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 20
 ```
 
-### Method 3: Automatic on Login
+#### macOS / Linux (Terminal)
 
-If you chose to add to Windows startup during installation, the daemon will start automatically when you log in.
+```bash
+# Check if hooks are registered
+cat ~/.claude/settings.json | grep -A5 "Stop"
 
-## How It Works
+# Check daemon status (use the path from Step 3)
+node "$daemon_path" status
 
-1. **Rate Limit Detection**: When Claude Code stops, the Stop hook (`rate-limit-hook.js`) analyzes the session transcript
-2. **Status File**: If a rate limit is detected, details are written to `status.json`
-3. **Daemon Monitoring**: The daemon monitors `status.json` and calculates wait time
-4. **Auto-Resume**: When the rate limit resets, the daemon automatically sends "continue" to resume your session
+# View logs
+tail -20 ~/.claude/auto-resume/daemon.log
+```
 
-## Verification
+---
 
-To verify the installation:
+## Manual Installation (Alternative)
 
-1. Check that files exist:
-   ```powershell
-   Test-Path "$env:USERPROFILE\.claude\hooks\rate-limit-hook.js"
-   Test-Path "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js"
+If you prefer not to use the plugin system, use the platform-specific installers.
+
+### Windows
+
+```powershell
+# Clone the repository
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
+
+# Run the installer
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+### macOS
+
+```bash
+# Clone the repository
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
+
+# Make installer executable and run
+chmod +x install.sh
+./install.sh
+```
+
+### Linux
+
+```bash
+# Clone the repository
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
+
+# Install xdotool (required for keystroke sending)
+# Ubuntu/Debian:
+sudo apt-get install xdotool
+# RHEL/CentOS:
+sudo yum install xdotool
+# Arch:
+sudo pacman -S xdotool
+
+# Make installer executable and run
+chmod +x install.sh
+./install.sh
+```
+
+---
+
+## Setting Up Auto-Start (Optional)
+
+To have the daemon start automatically when you log in:
+
+### Windows
+
+**Option 1: Startup Folder**
+1. Press `Win+R` and type `shell:startup`
+2. Create a new shortcut with target:
    ```
-
-2. Verify settings.json was updated:
-   ```powershell
-   Get-Content "$env:USERPROFILE\.claude\settings.json"
+   powershell.exe -WindowStyle Hidden -Command "node 'C:\Users\YOUR_USERNAME\.claude\auto-resume\auto-resume-daemon.js' start"
    ```
+   (Replace `YOUR_USERNAME` with your actual username)
 
-3. Test the daemon:
-   ```powershell
-   node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --test 10
-   ```
+**Option 2: Use installer script**
+The manual installer creates a startup script at:
+```
+%USERPROFILE%\.claude\auto-resume\start-daemon.ps1
+```
+
+### macOS (launchd)
+
+```bash
+# Create the plist file
+cat > ~/Library/LaunchAgents/com.claude.auto-resume.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.claude.auto-resume</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>~/.claude/auto-resume/auto-resume-daemon.js</string>
+        <string>start</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+# Load the service
+launchctl load ~/Library/LaunchAgents/com.claude.auto-resume.plist
+```
+
+**Note:** Adjust the node path if using nvm or homebrew (`which node` to find your path).
+
+### Linux (systemd)
+
+```bash
+# Create the systemd user service
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/claude-auto-resume.service << 'EOF'
+[Unit]
+Description=Claude Auto Resume Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node %h/.claude/auto-resume/auto-resume-daemon.js start
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+EOF
+
+# Reload, enable, and start
+systemctl --user daemon-reload
+systemctl --user enable claude-auto-resume
+systemctl --user start claude-auto-resume
+
+# Check status
+systemctl --user status claude-auto-resume
+```
+
+---
 
 ## Uninstallation
 
-To remove the plugin:
+### Plugin Method (All Platforms)
 
-```powershell
-.\install.ps1 -Uninstall
+```
+/plugin uninstall auto-resume
 ```
 
-This will:
-- Stop any running daemon processes
-- Remove all installed files
-- Remove the hook from settings.json
-- Remove the Windows startup shortcut
-- Create backup files (*.backup) before deletion
+### Manual Method
 
-## Troubleshooting
-
-### Node.js Not Found
-
-The installer will warn if Node.js is not installed. Install it from:
-https://nodejs.org/
-
-Minimum version: Node.js 16+
-
-### Permission Issues
-
-If you encounter permission errors:
-1. Run PowerShell as Administrator
-2. Or run the installer from the same user account that runs Claude Code
-
-### Execution Policy Error
-
-If you see "execution policy" errors:
-
+#### Windows
 ```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 ```
 
-### Hook Not Triggering
-
-1. Verify settings.json syntax:
-   ```powershell
-   Get-Content "$env:USERPROFILE\.claude\settings.json" | ConvertFrom-Json
-   ```
-
-2. Check hook script permissions
-3. Ensure Node.js is in your PATH
-
-### Daemon Not Starting
-
-1. Check if already running:
-   ```powershell
-   Get-Process -Name node | Where-Object { $_.CommandLine -like "*auto-resume*" }
-   ```
-
-2. Check for errors:
-   ```powershell
-   node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" -m
-   ```
-
-## Manual Installation
-
-If the automated installer fails, you can install manually:
-
-1. Create directories:
-   ```powershell
-   New-Item -Path "$env:USERPROFILE\.claude\auto-resume" -ItemType Directory -Force
-   New-Item -Path "$env:USERPROFILE\.claude\hooks" -ItemType Directory -Force
-   ```
-
-2. Copy files:
-   ```powershell
-   Copy-Item "hooks\rate-limit-hook.js" "$env:USERPROFILE\.claude\hooks\"
-   Copy-Item "index.js" "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js"
-   ```
-
-3. Update settings.json manually (see Settings Configuration above)
-
-## Advanced Configuration
-
-### Custom Resume Prompt
-
-Edit the daemon startup to use a custom prompt:
-
-```powershell
-node "%USERPROFILE%\.claude\auto-resume\auto-resume-daemon.js" -m --prompt "please continue with the previous task"
+#### macOS / Linux
+```bash
+./install.sh --uninstall
 ```
 
-### Different Monitor Mode
+---
 
-The daemon supports multiple modes:
-- `-m` or `--monitor`: Clipboard monitor (default)
-- `-i` or `--interactive`: Interactive mode
-- `--test <seconds>`: Test mode
+## Testing
 
-### Hook Timeout
+After installation, verify everything works:
 
-To adjust the hook timeout, edit settings.json and change the `timeout` value (in seconds).
+### Windows (PowerShell)
+```powershell
+# Test with 10-second countdown
+node $daemonPath --test 10
+```
 
-## Support
+### macOS / Linux (Terminal)
+```bash
+# Test with 10-second countdown
+node "$daemon_path" --test 10
+```
 
-For issues and questions:
-- GitHub Issues: [Create an issue](https://github.com/your-username/auto-claude-resume/issues)
-- Documentation: [README.md](README.md)
+---
 
-## License
+## Platform-Specific Requirements
 
-MIT License - See [LICENSE](LICENSE) file for details
+| Platform | Requirements |
+|----------|--------------|
+| **Windows** | Node.js 16+, PowerShell 5.1+ |
+| **macOS** | Node.js 16+, Terminal access |
+| **Linux** | Node.js 16+, xdotool (for keystroke sending) |
+
+---
+
+## Detailed Platform Guides
+
+For more detailed instructions:
+
+- [Windows Detailed Guide](docs/INSTALL-WINDOWS.md)
+- [Linux Detailed Guide](docs/INSTALL-LINUX.md)
+- [macOS Detailed Guide](docs/INSTALL-MACOS.md)

@@ -5,216 +5,231 @@ Complete guide for installing Auto Claude Resume on Linux (Ubuntu, Debian, Fedor
 ## Prerequisites
 
 - Linux with Bash shell
-- `xdotool` for sending keystrokes
-- `xclip` or `xsel` for clipboard monitoring
-- Node.js 16+ (optional, for Node.js version)
+- Claude Code CLI installed
+- Node.js 16+ ([Installation guide](https://nodejs.org/en/download/package-manager))
+- `xdotool` (for sending keystrokes)
 
-## Step 1: Install Dependencies
+---
 
-### Ubuntu/Debian
+## Method 1: Claude Code Plugin (Recommended)
+
+This is the easiest and recommended installation method.
+
+### Step 1: Install xdotool
+
+**Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install xdotool xclip bc
+sudo apt install xdotool
 ```
 
-### Fedora/RHEL/CentOS
+**Fedora/RHEL/CentOS:**
 ```bash
-sudo dnf install xdotool xclip bc
+sudo dnf install xdotool
 ```
 
-### Arch Linux
+**Arch Linux:**
 ```bash
-sudo pacman -S xdotool xclip bc
+sudo pacman -S xdotool
 ```
 
-### openSUSE
+**openSUSE:**
 ```bash
-sudo zypper install xdotool xclip bc
+sudo zypper install xdotool
 ```
 
-## Step 2: Download the Plugin
+### Step 2: Add the Marketplace
 
-### Option A: Clone with Git
+Open Claude Code and run:
+```
+/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
+```
+
+### Step 3: Install the Plugin
+
+```
+/plugin install auto-resume
+```
+
+### Step 4: Start the Daemon
+
+Open terminal and run:
+
+```bash
+# Find the daemon path
+daemon_path=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" -path "*auto-claude-resume*" 2>/dev/null | head -1)
+
+# Verify it was found
+echo "Daemon path: $daemon_path"
+
+# Start the daemon
+node "$daemon_path" start
+```
+
+### Step 5: Verify Installation
+
+```bash
+# Check daemon status
+node "$daemon_path" status
+
+# Check if hooks are registered
+cat ~/.claude/settings.json | grep -A5 "Stop"
+
+# View logs
+tail -20 ~/.claude/auto-resume/daemon.log
+```
+
+### Step 6: Test the Installation
+
+```bash
+# Run a 10-second test countdown
+node "$daemon_path" --test 10
+```
+
+---
+
+## Setting Up Auto-Start on Login (systemd)
+
+To have the daemon start automatically when you log in:
+
+### Create systemd User Service
+
+```bash
+# Create the service directory
+mkdir -p ~/.config/systemd/user
+
+# Create the service file
+cat > ~/.config/systemd/user/claude-auto-resume.service << 'EOF'
+[Unit]
+Description=Claude Auto Resume Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node %h/.claude/auto-resume/auto-resume-daemon.js start
+Restart=on-failure
+RestartSec=10
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=default.target
+EOF
+```
+
+**Note:** If you installed Node.js via nvm or another method, update the `ExecStart` path:
+```bash
+# Find your node path
+which node
+# Then update the service file accordingly
+```
+
+### Enable and Start
+
+```bash
+# Reload systemd
+systemctl --user daemon-reload
+
+# Enable auto-start on login
+systemctl --user enable claude-auto-resume
+
+# Start now
+systemctl --user start claude-auto-resume
+
+# Check status
+systemctl --user status claude-auto-resume
+```
+
+### Manage the Service
+
+```bash
+# Stop
+systemctl --user stop claude-auto-resume
+
+# Restart
+systemctl --user restart claude-auto-resume
+
+# View logs
+journalctl --user -u claude-auto-resume -f
+```
+
+---
+
+## Method 2: Manual Installation (Alternative)
+
+If the plugin method doesn't work, use manual installation.
+
+### Step 1: Install Dependencies
+
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install xdotool nodejs npm
+
+# Fedora
+sudo dnf install xdotool nodejs npm
+
+# Arch
+sudo pacman -S xdotool nodejs npm
+```
+
+### Step 2: Clone Repository
+
 ```bash
 git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
 cd auto-claude-resume-after-limit-reset
 ```
 
-### Option B: Download with wget
-```bash
-wget https://github.com/Muminur/auto-claude-resume-after-limit-reset/archive/main.zip
-unzip main.zip
-cd auto-claude-resume-after-limit-reset-main
-```
-
-## Step 3: Make Script Executable
+### Step 3: Run Installer
 
 ```bash
-chmod +x claude-auto-resume.sh
+chmod +x install.sh
+./install.sh
 ```
 
-## Step 4: Run the Script
+### Step 4: Start Daemon
 
 ```bash
-./claude-auto-resume.sh
+node ~/.claude/auto-resume/auto-resume-daemon.js start
 ```
 
-When prompted, select:
-1. **Interactive Mode** - Paste messages directly
-2. **Clipboard Monitor** - Monitors clipboard for rate limit messages
-3. **Test Mode** - Test with 30-second countdown
+---
 
-## Usage Examples
-
-### Basic Usage
-```bash
-# Interactive menu
-./claude-auto-resume.sh
-
-# Interactive mode directly
-./claude-auto-resume.sh -i
-
-# Clipboard monitoring
-./claude-auto-resume.sh -m
-
-# Test with 10-second countdown
-./claude-auto-resume.sh -t 10
-
-# Custom prompt
-./claude-auto-resume.sh -i -p "please continue with the task"
-```
-
-### Node.js Usage (Alternative)
-```bash
-# Install Node.js if needed
-# Ubuntu/Debian:
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-
-# Run with Node.js
-node index.js -i
-```
-
-## Claude Code Plugin Setup
-
-### Step 1: Create Plugin Directory
+## Daemon Management
 
 ```bash
-mkdir -p ~/.claude/plugins/auto-resume
+# Store daemon path for convenience
+daemon=~/.claude/auto-resume/auto-resume-daemon.js
+
+# Check status
+node $daemon status
+
+# Stop daemon
+node $daemon stop
+
+# Restart daemon
+node $daemon restart
+
+# View logs
+tail -f ~/.claude/auto-resume/daemon.log
+
+# View last 50 lines
+tail -50 ~/.claude/auto-resume/daemon.log
 ```
 
-### Step 2: Copy Files
-
-```bash
-cp -r ./* ~/.claude/plugins/auto-resume/
-chmod +x ~/.claude/plugins/auto-resume/claude-auto-resume.sh
-```
-
-### Step 3: Add to PATH (Optional)
-
-Add to your `~/.bashrc` or `~/.zshrc`:
-```bash
-export PATH="$PATH:$HOME/.claude/plugins/auto-resume"
-alias claude-resume="~/.claude/plugins/auto-resume/claude-auto-resume.sh"
-```
-
-Then reload:
-```bash
-source ~/.bashrc  # or source ~/.zshrc
-```
-
-### Step 4: Create Claude Code Hook
-
-Create or edit `~/.claude/settings.json`:
-```json
-{
-  "hooks": {
-    "on_rate_limit": {
-      "command": "~/.claude/plugins/auto-resume/claude-auto-resume.sh -m"
-    }
-  }
-}
-```
-
-## Running Alongside Claude Code
-
-### Option 1: Separate Terminal Window
-
-1. Open a new terminal window
-2. Run the auto-resume script:
-   ```bash
-   ./claude-auto-resume.sh -m
-   ```
-3. When Claude Code hits rate limit, copy the message
-4. The script detects it and starts countdown
-
-### Option 2: tmux Split
-
-```bash
-# Start tmux
-tmux
-
-# Split horizontally
-Ctrl+b %
-
-# Run Claude Code in left pane
-# In right pane, run:
-./claude-auto-resume.sh -m
-
-# Switch between panes with Ctrl+b arrow keys
-```
-
-### Option 3: Background with Screen
-
-```bash
-# Start screen session for auto-resume
-screen -S auto-resume
-./claude-auto-resume.sh -m
-
-# Detach with Ctrl+a d
-# Reattach later with: screen -r auto-resume
-```
-
-## Desktop Integration
-
-### Create Desktop Entry
-
-Create `~/.local/share/applications/claude-auto-resume.desktop`:
-```ini
-[Desktop Entry]
-Name=Claude Auto Resume
-Comment=Auto-resume Claude Code after rate limit
-Exec=gnome-terminal -- bash -c "~/.claude/plugins/auto-resume/claude-auto-resume.sh -m; read"
-Icon=utilities-terminal
-Terminal=false
-Type=Application
-Categories=Development;Utility;
-```
-
-### Create System Service (Advanced)
-
-Create `~/.config/systemd/user/claude-auto-resume.service`:
-```ini
-[Unit]
-Description=Claude Code Auto Resume Monitor
-
-[Service]
-ExecStart=/home/YOUR_USERNAME/.claude/plugins/auto-resume/claude-auto-resume.sh -m
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-```
-
-Enable with:
-```bash
-systemctl --user enable claude-auto-resume
-systemctl --user start claude-auto-resume
-```
+---
 
 ## Troubleshooting
 
-### "xdotool not found"
+### Plugin Not Showing in /plugin
+
+Ensure you've added the marketplace first:
+```
+/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
+```
+
+### "xdotool: command not found"
+
+Install xdotool for your distribution:
 ```bash
 # Ubuntu/Debian
 sudo apt install xdotool
@@ -226,62 +241,109 @@ sudo dnf install xdotool
 sudo pacman -S xdotool
 ```
 
-### "xclip not found" (Clipboard monitoring)
-```bash
-# Ubuntu/Debian
-sudo apt install xclip
+### Node.js Not Found or Wrong Version
 
-# Or use xsel instead
-sudo apt install xsel
+```bash
+# Check version (must be 16+)
+node --version
+
+# Install via NodeSource (Ubuntu/Debian)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Or use nvm (recommended)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+source ~/.bashrc
+nvm install 20
 ```
 
-### "bc: command not found"
-```bash
-sudo apt install bc
-```
+### Daemon Not Starting
 
-### Permission Denied
 ```bash
-chmod +x claude-auto-resume.sh
+# Check if already running
+pgrep -f "auto-resume-daemon"
+
+# Check Node.js version
+node --version
+
+# Check logs for errors
+cat ~/.claude/auto-resume/daemon.log
 ```
 
 ### Keystrokes Not Being Sent
-1. Ensure xdotool is installed
-2. Make sure you're running in an X11 session (not Wayland)
-3. For Wayland, try running with XWayland
 
-### For Wayland Users
-If using Wayland, some features may not work. Try:
+The daemon uses `xdotool` to send keystrokes. Common issues:
+
+1. **xdotool not installed:** See installation section above
+
+2. **Running on Wayland:** xdotool requires X11. Try:
+   ```bash
+   # Run under XWayland
+   GDK_BACKEND=x11 node "$daemon_path" start
+   ```
+   Or switch to an X11 session at login.
+
+3. **No DISPLAY variable:**
+   ```bash
+   export DISPLAY=:0
+   node "$daemon_path" start
+   ```
+
+### Wayland Compatibility
+
+If using Wayland (default on newer Ubuntu/Fedora), xdotool may not work. Options:
+
+1. **Switch to X11 session** at login screen
+2. **Use XWayland:**
+   ```bash
+   GDK_BACKEND=x11 node "$daemon_path" start
+   ```
+3. **Install ydotool** (Wayland alternative - requires additional setup)
+
+### Permission Denied
+
 ```bash
-# Run under XWayland
-GDK_BACKEND=x11 ./claude-auto-resume.sh -m
+chmod +x ~/.claude/hooks/rate-limit-hook.js
+chmod +x ~/.claude/auto-resume/auto-resume-daemon.js
 ```
 
-Or switch to X11 session at login.
+### Test the Installation
 
-### Testing the Installation
 ```bash
 # Verify dependencies
-which xdotool xclip
+which node xdotool
 
-# Quick test
-./claude-auto-resume.sh -t 5
+# Quick test with 5-second countdown
+node "$daemon_path" --test 5
 ```
+
+---
 
 ## Uninstallation
 
+### Plugin Method
+```
+/plugin uninstall auto-resume
+```
+
+### Manual Method
 ```bash
-# Remove plugin files
-rm -rf ~/.claude/plugins/auto-resume
+./install.sh --uninstall
+```
 
-# Remove from PATH (edit ~/.bashrc)
-# Remove the alias line you added
+### Complete Cleanup
 
-# Remove desktop entry
-rm ~/.local/share/applications/claude-auto-resume.desktop
+```bash
+# Stop daemon
+node ~/.claude/auto-resume/auto-resume-daemon.js stop
 
-# Remove systemd service (if created)
+# Stop and remove systemd service
 systemctl --user stop claude-auto-resume
 systemctl --user disable claude-auto-resume
 rm ~/.config/systemd/user/claude-auto-resume.service
+systemctl --user daemon-reload
+
+# Remove files
+rm -rf ~/.claude/auto-resume
+rm -f ~/.claude/hooks/rate-limit-hook.js
 ```

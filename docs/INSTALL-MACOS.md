@@ -1,156 +1,112 @@
 # macOS Installation Guide
 
-Complete guide for installing Auto Claude Resume on macOS (Monterey, Ventura, Sonoma, and later).
+Complete guide for installing Auto Claude Resume on macOS (Monterey, Ventura, Sonoma, Sequoia, and later).
 
 ## Prerequisites
 
 - macOS 12 (Monterey) or later
+- Claude Code CLI installed
+- Node.js 16+ ([Download](https://nodejs.org/) or use Homebrew)
 - Terminal app or iTerm2
-- Node.js 16+ (required for daemon mode)
 
 **Note:** macOS includes all required tools (`osascript`, `pbpaste`) by default.
 
-## Quick Install (Recommended)
+---
 
-The automated installer handles everything for you:
+## Method 1: Claude Code Plugin (Recommended)
 
-```bash
-# Clone the repository
-git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
-cd auto-claude-resume-after-limit-reset
+This is the easiest and recommended installation method.
 
-# Run the installer
-./install.sh
+### Step 1: Add the Marketplace
+
+Open Claude Code and run:
+```
+/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
 ```
 
-The installer automatically:
-- Creates `~/.claude/hooks/` and `~/.claude/auto-resume/` directories
-- Deploys the rate limit detection hook
-- Deploys the auto-resume daemon
-- Installs npm dependencies
-- Updates `~/.claude/settings.json` with hook configuration
-- Sets up launchd for auto-start on login
+### Step 2: Install the Plugin
 
-### After Installation: Grant Accessibility Permissions
+```
+/plugin install auto-resume
+```
 
-**Critical:** The daemon runs as a Node.js process, so you must grant accessibility permissions to **Node.js** (not Terminal).
+### Step 3: Start the Daemon
+
+Open Terminal and run:
+
+```bash
+# Find the daemon path
+daemon_path=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" -path "*auto-claude-resume*" 2>/dev/null | head -1)
+
+# Verify it was found
+echo "Daemon path: $daemon_path"
+
+# Start the daemon
+node "$daemon_path" start
+```
+
+### Step 4: Grant Accessibility Permissions
+
+**Critical:** The daemon sends keystrokes using `osascript`. You must grant accessibility permissions to **Node.js**.
 
 1. Find your Node.js binary path:
    ```bash
    which node
-   # Usually: /usr/local/bin/node
+   # Usually: /usr/local/bin/node or /opt/homebrew/bin/node
 
    # If it's a symlink, get the real path:
    realpath $(which node)
-   # Example: /usr/local/Cellar/node/24.5.0/bin/node
+   # Example: /usr/local/Cellar/node/20.0.0/bin/node
    ```
 
 2. Open **System Settings** > **Privacy & Security** > **Accessibility**
 
-3. Click the **lock icon** to make changes
+3. Click the **lock icon** to make changes (enter password)
 
 4. Click the **+** button
 
-5. Press **Cmd+Shift+G** and paste the Node.js path (e.g., `/usr/local/Cellar/node/24.5.0/bin/`)
+5. Press **Cmd+Shift+G** and paste the Node.js path (e.g., `/usr/local/Cellar/node/20.0.0/bin/`)
 
 6. Select **node** and click **Open**
 
 7. Ensure the **checkbox is enabled** next to node
 
-### Verify Installation
+### Step 5: Verify Installation
 
 ```bash
 # Check daemon status
-node ~/.claude/auto-resume/auto-resume-daemon.js status
+node "$daemon_path" status
 
-# Test keystroke functionality (will type "continue" + Enter in ~15 seconds)
-# Make sure you're ready - this will send keystrokes to Terminal!
-RESET_TIME=$(date -u -v+15S +"%Y-%m-%dT%H:%M:%S.000Z")
-echo "{\"detected\": true, \"reset_time\": \"$RESET_TIME\", \"message\": \"TEST\", \"timezone\": \"UTC\"}" > ~/.claude/auto-resume/status.json
+# Check if hooks are registered
+cat ~/.claude/settings.json | grep -A5 "Stop"
 
-# Watch the log
-tail -f ~/.claude/auto-resume/daemon.log
+# View logs
+tail -20 ~/.claude/auto-resume/daemon.log
 ```
 
-If you see `[SUCCESS] Sent: 'continue' + Enter to terminal windows`, the installation is complete.
+### Step 6: Test the Installation
+
+```bash
+# Run a 10-second test countdown
+# WARNING: This will type "continue" + Enter after 10 seconds!
+node "$daemon_path" --test 10
+```
 
 ---
 
-## Manual Installation (Alternative)
+## Setting Up Auto-Start on Login (launchd)
 
-If you prefer manual setup or the automated installer doesn't work:
+To have the daemon start automatically when you log in:
 
-### Step 1: Download the Plugin
-
-#### Option A: Clone with Git
-```bash
-git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
-cd auto-claude-resume-after-limit-reset
-```
-
-#### Option B: Download with curl
-```bash
-curl -L https://github.com/Muminur/auto-claude-resume-after-limit-reset/archive/main.zip -o auto-resume.zip
-unzip auto-resume.zip
-cd auto-claude-resume-after-limit-reset-main
-```
-
-#### Option C: Download from Browser
-1. Go to https://github.com/Muminur/auto-claude-resume-after-limit-reset
-2. Click "Code" > "Download ZIP"
-3. Extract and open Terminal in that folder
-
-### Step 2: Create Directory Structure
+### Create launchd Service
 
 ```bash
-mkdir -p ~/.claude/hooks
-mkdir -p ~/.claude/auto-resume
-```
+# Find your Node.js path
+NODE_PATH=$(which node)
+echo "Node path: $NODE_PATH"
 
-### Step 3: Copy Files
-
-```bash
-cp src/hooks/rate-limit-hook.js ~/.claude/hooks/
-cp src/daemon/auto-resume-daemon.js ~/.claude/auto-resume/
-cp src/daemon/package.json ~/.claude/auto-resume/
-chmod +x ~/.claude/hooks/rate-limit-hook.js
-chmod +x ~/.claude/auto-resume/auto-resume-daemon.js
-```
-
-### Step 4: Install Dependencies
-
-```bash
-cd ~/.claude/auto-resume
-npm install --production
-```
-
-### Step 5: Configure Claude Code Hook
-
-Edit `~/.claude/settings.json` to add the Stop hook:
-
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ~/.claude/hooks/rate-limit-hook.js",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-### Step 6: Set Up launchd for Auto-Start
-
-Create `~/Library/LaunchAgents/com.claude.auto-resume.plist`:
-
-```xml
+# Create the plist file
+cat > ~/Library/LaunchAgents/com.claude.auto-resume.plist << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -159,8 +115,8 @@ Create `~/Library/LaunchAgents/com.claude.auto-resume.plist`:
     <string>com.claude.auto-resume</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/node</string>
-        <string>/Users/YOUR_USERNAME/.claude/auto-resume/auto-resume-daemon.js</string>
+        <string>$NODE_PATH</string>
+        <string>$HOME/.claude/auto-resume/auto-resume-daemon.js</string>
         <string>start</string>
     </array>
     <key>RunAtLoad</key>
@@ -168,125 +124,188 @@ Create `~/Library/LaunchAgents/com.claude.auto-resume.plist`:
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/YOUR_USERNAME/.claude/auto-resume/daemon.log</string>
+    <string>$HOME/.claude/auto-resume/daemon.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/YOUR_USERNAME/.claude/auto-resume/daemon-error.log</string>
+    <string>$HOME/.claude/auto-resume/daemon-error.log</string>
     <key>WorkingDirectory</key>
-    <string>/Users/YOUR_USERNAME/.claude/auto-resume</string>
+    <string>$HOME/.claude/auto-resume</string>
 </dict>
 </plist>
-```
+EOF
 
-**Important:** Replace `YOUR_USERNAME` with your actual username, and update the node path if different.
-
-Load the service:
-```bash
+# Load the service
 launchctl load ~/Library/LaunchAgents/com.claude.auto-resume.plist
 ```
 
-### Step 7: Grant Accessibility Permissions to Node.js
+### Manage the Service
 
-See the "Grant Accessibility Permissions" section above.
+```bash
+# Check if running
+launchctl list | grep claude
+
+# Stop
+launchctl unload ~/Library/LaunchAgents/com.claude.auto-resume.plist
+
+# Start
+launchctl load ~/Library/LaunchAgents/com.claude.auto-resume.plist
+
+# Restart (unload then load)
+launchctl unload ~/Library/LaunchAgents/com.claude.auto-resume.plist
+launchctl load ~/Library/LaunchAgents/com.claude.auto-resume.plist
+```
 
 ---
 
-## Shell Script Usage (Standalone)
+## Method 2: Manual Installation (Alternative)
 
-For manual/interactive use without the daemon:
+If the plugin method doesn't work, use manual installation.
 
-### Make Script Executable
+### Step 1: Install Node.js
 
+**Option A: Homebrew (Recommended)**
 ```bash
-chmod +x claude-auto-resume.sh
+brew install node
 ```
 
-### Run the Script
+**Option B: Official Installer**
+Download from https://nodejs.org/
+
+### Step 2: Clone Repository
 
 ```bash
-./claude-auto-resume.sh
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
 ```
 
-When prompted, select:
-1. **Interactive Mode** - Paste messages directly
-2. **Clipboard Monitor** - Monitors clipboard for rate limit messages
-3. **Test Mode** - Test with 30-second countdown
-
-### Usage Examples
+### Step 3: Run Installer
 
 ```bash
-# Interactive menu
-./claude-auto-resume.sh
+chmod +x install.sh
+./install.sh
+```
 
-# Interactive mode directly
-./claude-auto-resume.sh -i
+### Step 4: Grant Accessibility Permissions
 
-# Clipboard monitoring
-./claude-auto-resume.sh -m
+See Step 4 in the plugin installation section above.
 
-# Test with 10-second countdown
-./claude-auto-resume.sh -t 10
+### Step 5: Start Daemon
 
-# Custom prompt
-./claude-auto-resume.sh -i -p "please continue with the task"
+```bash
+node ~/.claude/auto-resume/auto-resume-daemon.js start
 ```
 
 ---
 
 ## Daemon Management
 
-### Commands
-
 ```bash
+# Store daemon path for convenience
+daemon=~/.claude/auto-resume/auto-resume-daemon.js
+
 # Check status
-node ~/.claude/auto-resume/auto-resume-daemon.js status
+node $daemon status
 
 # Stop daemon
-node ~/.claude/auto-resume/auto-resume-daemon.js stop
+node $daemon stop
 
 # Restart daemon
-node ~/.claude/auto-resume/auto-resume-daemon.js restart
+node $daemon restart
 
 # View logs
 tail -f ~/.claude/auto-resume/daemon.log
+
+# View last 50 lines
+tail -50 ~/.claude/auto-resume/daemon.log
 ```
-
-### How It Works
-
-1. **Hook Detection:** When Claude Code stops, the `rate-limit-hook.js` analyzes the session
-2. **Status File:** If a rate limit is detected, it writes to `~/.claude/auto-resume/status.json`
-3. **Daemon Monitoring:** The daemon watches the status file for changes
-4. **Countdown:** When a rate limit is detected, the daemon shows a countdown timer
-5. **Auto-Resume:** When the reset time arrives, the daemon sends "continue" + Enter keystrokes
 
 ---
 
 ## Troubleshooting
 
-### Keystrokes Not Being Sent (Daemon)
+### Plugin Not Showing in /plugin
 
-**Error:** `osascript is not allowed to send keystrokes (1002)`
+Ensure you've added the marketplace first:
+```
+/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
+```
 
-**Solution:** Grant accessibility permissions to Node.js, not Terminal:
+### Keystrokes Not Being Sent
 
-1. Find Node.js path: `realpath $(which node)`
-2. System Settings > Privacy & Security > Accessibility
-3. Add the Node.js binary (e.g., `/usr/local/Cellar/node/24.5.0/bin/node`)
-4. Restart the daemon: `node ~/.claude/auto-resume/auto-resume-daemon.js restart`
+**Error:** `osascript is not allowed to send keystrokes (1002)` or similar
+
+**Solution:** Grant accessibility permissions to Node.js (not Terminal):
+
+1. Find the real Node.js path:
+   ```bash
+   realpath $(which node)
+   ```
+
+2. Go to **System Settings** > **Privacy & Security** > **Accessibility**
+
+3. Add the Node.js binary (e.g., `/usr/local/Cellar/node/20.0.0/bin/node`)
+
+4. Restart the daemon:
+   ```bash
+   node ~/.claude/auto-resume/auto-resume-daemon.js restart
+   ```
+
+### Node.js Not Found
+
+**Install via Homebrew:**
+```bash
+brew install node
+```
+
+**Or download from:** https://nodejs.org/
+
+**Verify installation:**
+```bash
+node --version  # Must be 16+
+```
+
+### For Apple Silicon (M1/M2/M3/M4) Macs
+
+Ensure you have native ARM64 Node.js:
+
+```bash
+# Install native Node.js for ARM64 via Homebrew
+arch -arm64 brew install node
+
+# Verify architecture
+file $(which node)
+# Should show: Mach-O 64-bit executable arm64
+```
 
 ### Daemon Not Starting
 
 ```bash
-# Check if launchd service is loaded
-launchctl list | grep claude
+# Check if already running
+pgrep -f "auto-resume-daemon"
 
-# Check daemon log for errors
+# Check Node.js version
+node --version
+
+# Check logs for errors
 cat ~/.claude/auto-resume/daemon.log
-
-# Verify Node.js version
-node --version  # Requires v16+
 ```
 
-### "Permission Denied"
+### launchd Service Not Working
+
+```bash
+# Check if loaded
+launchctl list | grep claude
+
+# Check for errors
+cat ~/Library/LaunchAgents/com.claude.auto-resume.plist
+
+# Verify plist syntax
+plutil -lint ~/Library/LaunchAgents/com.claude.auto-resume.plist
+
+# Check daemon error log
+cat ~/.claude/auto-resume/daemon-error.log
+```
+
+### Permission Denied
 
 ```bash
 chmod +x ~/.claude/hooks/rate-limit-hook.js
@@ -303,40 +322,44 @@ cat ~/.claude/settings.json | grep rate-limit-hook
 ls -la ~/.claude/hooks/rate-limit-hook.js
 ```
 
-### For Apple Silicon (M1/M2/M3) Macs
-
-The daemon is compatible with Apple Silicon. Ensure you have native ARM64 Node.js:
+### Test the Installation
 
 ```bash
-# Install native Node.js for ARM64
-arch -arm64 brew install node
+# Verify Node.js
+node --version
 
-# Verify architecture
-file $(which node)
-# Should show: Mach-O 64-bit executable arm64
+# Quick test with 5-second countdown
+# WARNING: This will type in Terminal!
+node "$daemon_path" --test 5
 ```
 
 ---
 
 ## Uninstallation
 
-### Using the Installer
+### Plugin Method
+```
+/plugin uninstall auto-resume
+```
 
+### Manual Method
 ```bash
 ./install.sh --uninstall
 ```
 
-### Manual Uninstallation
+### Complete Cleanup
 
 ```bash
 # Stop and remove launchd service
 launchctl unload ~/Library/LaunchAgents/com.claude.auto-resume.plist
 rm ~/Library/LaunchAgents/com.claude.auto-resume.plist
 
-# Remove plugin files
-rm -rf ~/.claude/auto-resume
-rm ~/.claude/hooks/rate-limit-hook.js
+# Stop daemon
+node ~/.claude/auto-resume/auto-resume-daemon.js stop
 
-# Remove hook from settings.json (edit manually)
-# Remove the "Stop" hook entry from ~/.claude/settings.json
+# Remove files
+rm -rf ~/.claude/auto-resume
+rm -f ~/.claude/hooks/rate-limit-hook.js
+
+# Optionally remove Node.js from Accessibility (System Settings)
 ```

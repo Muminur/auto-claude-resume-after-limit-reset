@@ -1,33 +1,31 @@
 {
-  "name": "claude-auto-resume",
-  "version": "1.0.0",
+  "name": "auto-resume",
+  "version": "1.1.0",
   "description": "Automatically resume Claude Code terminal sessions when rate limits reset",
-  "main": "index.js",
+  "main": "auto-resume-daemon.js",
   "bin": {
-    "claude-auto-resume": "./index.js",
-    "claude-resume-daemon": "./auto-resume-daemon.js"
+    "auto-resume-daemon": "./auto-resume-daemon.js"
   },
   "scripts": {
-    "start": "node index.js",
-    "test": "node index.js --test 10",
-    "test:daemon": "node test-daemon.js",
+    "postinstall": "node scripts/setup-daemon.js",
     "daemon:start": "node auto-resume-daemon.js start",
     "daemon:stop": "node auto-resume-daemon.js stop",
     "daemon:status": "node auto-resume-daemon.js status",
-    "daemon:restart": "node auto-resume-daemon.js restart"
+    "daemon:restart": "node auto-resume-daemon.js restart",
+    "test": "node test-daemon.js"
   },
   "keywords": [
     "claude",
     "claude-code",
+    "claude-plugin",
     "auto-resume",
     "rate-limit",
     "cli"
   ],
-  "author": "",
+  "author": "Muminur",
   "license": "MIT",
   "dependencies": {
-    "clipboardy": "^4.0.0",
-    "robotjs": "^0.6.0"
+    "clipboardy": "^4.0.0"
   },
   "optionalDependencies": {
     "robotjs": "^0.6.0"
