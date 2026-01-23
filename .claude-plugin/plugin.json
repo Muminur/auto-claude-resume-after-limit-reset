@@ -6,5 +6,29 @@
     "name": "Muminur",
     "email": "muminur@example.com"
   },
-  "hooks": "../hooks/hooks.json"
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/ensure-daemon-running.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/rate-limit-hook.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }
