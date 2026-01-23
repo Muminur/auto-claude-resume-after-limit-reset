@@ -2,14 +2,24 @@
   "hooks": {
     "SessionStart": [
       {
-        "command": ["node", "${CLAUDE_PLUGIN_ROOT}/scripts/ensure-daemon-running.js"],
-        "timeout": 5000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/ensure-daemon-running.js\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "Stop": [
       {
-        "command": ["node", "${CLAUDE_PLUGIN_ROOT}/hooks/rate-limit-hook.js"],
-        "timeout": 10000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/rate-limit-hook.js\"",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }
