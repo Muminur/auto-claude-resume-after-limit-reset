@@ -13,7 +13,7 @@ Complete guide for installing Auto Claude Resume on Windows 10/11.
 
 ## Method 1: Claude Code Plugin (Recommended)
 
-This is the easiest and recommended installation method.
+This is the easiest installation method. Just two steps!
 
 ### Step 1: Add the Marketplace
 
@@ -28,65 +28,38 @@ Open Claude Code and run:
 /plugin install auto-resume
 ```
 
-### Step 3: Start the Daemon
+**That's it!** The daemon will automatically start when you open a new Claude Code session.
+
+### How It Works
+
+The plugin registers a **SessionStart hook** that:
+1. Runs automatically when you open Claude Code
+2. Checks if the daemon is already running
+3. Starts the daemon in the background if it's not running
+
+You don't need to configure Windows Startup manually - the plugin handles everything!
+
+### Verify Installation (Optional)
 
 Open PowerShell and run:
 
 ```powershell
-# Find the daemon path
-$daemonPath = Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\*\auto-claude-resume-after-limit-reset\*\auto-resume-daemon.js" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-
-# Verify it was found
-Write-Host "Daemon path: $daemonPath"
-
-# Start the daemon
-node $daemonPath start
-```
-
-### Step 4: Verify Installation
-
-```powershell
-# Check daemon status
-node $daemonPath status
-
 # Check if hooks are registered
-Get-Content "$env:USERPROFILE\.claude\settings.json" | Select-String "rate-limit"
+Get-Content "$env:USERPROFILE\.claude\settings.json" | Select-String "auto-resume"
+
+# Check daemon status
+node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" status
 
 # View logs
 Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 20
 ```
 
-### Step 5: Test the Installation
+### Test the Installation
 
 ```powershell
 # Run a 10-second test countdown
-node $daemonPath --test 10
+node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --test 10
 ```
-
----
-
-## Setting Up Auto-Start on Login
-
-To have the daemon start automatically when you log into Windows:
-
-### Option 1: Startup Folder (Simple)
-
-1. Press `Win+R` and type `shell:startup`
-2. Create a new shortcut:
-   - Right-click > New > Shortcut
-   - Target: `powershell.exe -WindowStyle Hidden -Command "node '%USERPROFILE%\.claude\auto-resume\auto-resume-daemon.js' start"`
-   - Name: "Claude Auto Resume"
-
-### Option 2: Task Scheduler (Advanced)
-
-1. Open Task Scheduler (`taskschd.msc`)
-2. Create Basic Task:
-   - Name: "Claude Auto Resume Daemon"
-   - Trigger: "When I log on"
-   - Action: Start a program
-   - Program: `node`
-   - Arguments: `"%USERPROFILE%\.claude\auto-resume\auto-resume-daemon.js" start`
-3. Check "Open Properties dialog" and enable "Run whether user is logged on or not"
 
 ---
 
@@ -111,15 +84,13 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-### Step 3: Start Daemon
-
-```powershell
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" start
-```
+The manual installer will set up hooks and optionally configure Windows Startup for you.
 
 ---
 
 ## Daemon Management
+
+The daemon auto-starts with Claude Code, but you can manage it manually:
 
 ```powershell
 # Store daemon path for convenience
@@ -166,18 +137,14 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 3. Restart PowerShell
 4. Verify: `node --version`
 
-### Daemon Not Starting
+### Daemon Not Auto-Starting
 
+Check if the SessionStart hook is registered:
 ```powershell
-# Check if already running
-Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*auto-resume*" }
-
-# Check Node.js version (must be 16+)
-node --version
-
-# Check logs for errors
-Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 50
+Get-Content "$env:USERPROFILE\.claude\settings.json" | Select-String "SessionStart"
 ```
+
+If not present, try reinstalling the plugin.
 
 ### Keystrokes Not Being Sent
 
@@ -185,13 +152,6 @@ The daemon sends keystrokes to terminal windows. Ensure:
 1. Claude Code is running in a terminal window (Windows Terminal, PowerShell, CMD)
 2. The terminal window is not minimized
 3. Try running PowerShell as Administrator
-
-### Test the Installation
-
-```powershell
-# Quick test with 5-second countdown
-node $daemonPath --test 5
-```
 
 ---
 
@@ -214,8 +174,5 @@ node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" stop
 
 # Remove files
 Remove-Item -Recurse -Force "$env:USERPROFILE\.claude\auto-resume"
-Remove-Item -Force "$env:USERPROFILE\.claude\hooks\rate-limit-hook.js"
-
-# Remove startup shortcut (if created)
-Remove-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\Claude Auto Resume.lnk" -ErrorAction SilentlyContinue
+Remove-Item -Force "$env:USERPROFILE\.claude\hooks\rate-limit-hook.js" -ErrorAction SilentlyContinue
 ```

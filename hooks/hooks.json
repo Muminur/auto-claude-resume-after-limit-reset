@@ -1,6 +1,18 @@
 {
-  "description": "Auto-resume hook that detects rate limits and schedules automatic session resume",
+  "description": "Auto-resume hooks: starts daemon on session start, detects rate limits on stop",
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/ensure-daemon-running.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "*",

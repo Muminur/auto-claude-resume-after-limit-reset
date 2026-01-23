@@ -15,7 +15,7 @@ Complete guide for installing Auto Claude Resume on macOS (Monterey, Ventura, So
 
 ## Method 1: Claude Code Plugin (Recommended)
 
-This is the easiest and recommended installation method.
+This is the easiest installation method. Just two steps!
 
 ### Step 1: Add the Marketplace
 
@@ -30,22 +30,18 @@ Open Claude Code and run:
 /plugin install auto-resume
 ```
 
-### Step 3: Start the Daemon
+**That's it!** The daemon will automatically start when you open a new Claude Code session.
 
-Open Terminal and run:
+### How It Works
 
-```bash
-# Find the daemon path
-daemon_path=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" -path "*auto-claude-resume*" 2>/dev/null | head -1)
+The plugin registers a **SessionStart hook** that:
+1. Runs automatically when you open Claude Code
+2. Checks if the daemon is already running
+3. Starts the daemon in the background if it's not running
 
-# Verify it was found
-echo "Daemon path: $daemon_path"
+You don't need to configure launchd or any auto-start mechanism - the plugin handles everything!
 
-# Start the daemon
-node "$daemon_path" start
-```
-
-### Step 4: Grant Accessibility Permissions
+### Grant Accessibility Permissions (Required)
 
 **Critical:** The daemon sends keystrokes using `osascript`. You must grant accessibility permissions to **Node.js**.
 
@@ -71,87 +67,25 @@ node "$daemon_path" start
 
 7. Ensure the **checkbox is enabled** next to node
 
-### Step 5: Verify Installation
+### Verify Installation (Optional)
 
 ```bash
-# Check daemon status
-node "$daemon_path" status
-
 # Check if hooks are registered
-cat ~/.claude/settings.json | grep -A5 "Stop"
+cat ~/.claude/settings.json | grep -A5 "SessionStart"
+
+# Check daemon status
+node ~/.claude/auto-resume/auto-resume-daemon.js status
 
 # View logs
 tail -20 ~/.claude/auto-resume/daemon.log
 ```
 
-### Step 6: Test the Installation
+### Test the Installation
 
 ```bash
 # Run a 10-second test countdown
 # WARNING: This will type "continue" + Enter after 10 seconds!
-node "$daemon_path" --test 10
-```
-
----
-
-## Setting Up Auto-Start on Login (launchd)
-
-To have the daemon start automatically when you log in:
-
-### Create launchd Service
-
-```bash
-# Find your Node.js path
-NODE_PATH=$(which node)
-echo "Node path: $NODE_PATH"
-
-# Create the plist file
-cat > ~/Library/LaunchAgents/com.claude.auto-resume.plist << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.claude.auto-resume</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$NODE_PATH</string>
-        <string>$HOME/.claude/auto-resume/auto-resume-daemon.js</string>
-        <string>start</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>$HOME/.claude/auto-resume/daemon.log</string>
-    <key>StandardErrorPath</key>
-    <string>$HOME/.claude/auto-resume/daemon-error.log</string>
-    <key>WorkingDirectory</key>
-    <string>$HOME/.claude/auto-resume</string>
-</dict>
-</plist>
-EOF
-
-# Load the service
-launchctl load ~/Library/LaunchAgents/com.claude.auto-resume.plist
-```
-
-### Manage the Service
-
-```bash
-# Check if running
-launchctl list | grep claude
-
-# Stop
-launchctl unload ~/Library/LaunchAgents/com.claude.auto-resume.plist
-
-# Start
-launchctl load ~/Library/LaunchAgents/com.claude.auto-resume.plist
-
-# Restart (unload then load)
-launchctl unload ~/Library/LaunchAgents/com.claude.auto-resume.plist
-launchctl load ~/Library/LaunchAgents/com.claude.auto-resume.plist
+node ~/.claude/auto-resume/auto-resume-daemon.js --test 10
 ```
 
 ---
@@ -184,19 +118,17 @@ chmod +x install.sh
 ./install.sh
 ```
 
+The manual installer will set up hooks and optionally configure launchd for you.
+
 ### Step 4: Grant Accessibility Permissions
 
-See Step 4 in the plugin installation section above.
-
-### Step 5: Start Daemon
-
-```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js start
-```
+See the "Grant Accessibility Permissions" section above.
 
 ---
 
 ## Daemon Management
+
+The daemon auto-starts with Claude Code, but you can manage it manually:
 
 ```bash
 # Store daemon path for convenience
@@ -276,34 +208,14 @@ file $(which node)
 # Should show: Mach-O 64-bit executable arm64
 ```
 
-### Daemon Not Starting
+### Daemon Not Auto-Starting
 
+Check if the SessionStart hook is registered:
 ```bash
-# Check if already running
-pgrep -f "auto-resume-daemon"
-
-# Check Node.js version
-node --version
-
-# Check logs for errors
-cat ~/.claude/auto-resume/daemon.log
+cat ~/.claude/settings.json | grep -A5 "SessionStart"
 ```
 
-### launchd Service Not Working
-
-```bash
-# Check if loaded
-launchctl list | grep claude
-
-# Check for errors
-cat ~/Library/LaunchAgents/com.claude.auto-resume.plist
-
-# Verify plist syntax
-plutil -lint ~/Library/LaunchAgents/com.claude.auto-resume.plist
-
-# Check daemon error log
-cat ~/.claude/auto-resume/daemon-error.log
-```
+If not present, try reinstalling the plugin.
 
 ### Permission Denied
 
@@ -320,17 +232,6 @@ cat ~/.claude/settings.json | grep rate-limit-hook
 
 # Check hook exists
 ls -la ~/.claude/hooks/rate-limit-hook.js
-```
-
-### Test the Installation
-
-```bash
-# Verify Node.js
-node --version
-
-# Quick test with 5-second countdown
-# WARNING: This will type in Terminal!
-node "$daemon_path" --test 5
 ```
 
 ---
@@ -350,10 +251,6 @@ node "$daemon_path" --test 5
 ### Complete Cleanup
 
 ```bash
-# Stop and remove launchd service
-launchctl unload ~/Library/LaunchAgents/com.claude.auto-resume.plist
-rm ~/Library/LaunchAgents/com.claude.auto-resume.plist
-
 # Stop daemon
 node ~/.claude/auto-resume/auto-resume-daemon.js stop
 

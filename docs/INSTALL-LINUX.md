@@ -13,9 +13,9 @@ Complete guide for installing Auto Claude Resume on Linux (Ubuntu, Debian, Fedor
 
 ## Method 1: Claude Code Plugin (Recommended)
 
-This is the easiest and recommended installation method.
+This is the easiest installation method. Just two steps!
 
-### Step 1: Install xdotool
+### Step 1: Install xdotool (One-Time Requirement)
 
 **Ubuntu/Debian:**
 ```bash
@@ -51,105 +51,35 @@ Open Claude Code and run:
 /plugin install auto-resume
 ```
 
-### Step 4: Start the Daemon
+**That's it!** The daemon will automatically start when you open a new Claude Code session.
 
-Open terminal and run:
+### How It Works
 
-```bash
-# Find the daemon path
-daemon_path=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" -path "*auto-claude-resume*" 2>/dev/null | head -1)
+The plugin registers a **SessionStart hook** that:
+1. Runs automatically when you open Claude Code
+2. Checks if the daemon is already running
+3. Starts the daemon in the background if it's not running
 
-# Verify it was found
-echo "Daemon path: $daemon_path"
+You don't need to configure systemd or any auto-start mechanism - the plugin handles everything!
 
-# Start the daemon
-node "$daemon_path" start
-```
-
-### Step 5: Verify Installation
+### Verify Installation (Optional)
 
 ```bash
-# Check daemon status
-node "$daemon_path" status
-
 # Check if hooks are registered
-cat ~/.claude/settings.json | grep -A5 "Stop"
+cat ~/.claude/settings.json | grep -A5 "SessionStart"
+
+# Check daemon status
+node ~/.claude/auto-resume/auto-resume-daemon.js status
 
 # View logs
 tail -20 ~/.claude/auto-resume/daemon.log
 ```
 
-### Step 6: Test the Installation
+### Test the Installation
 
 ```bash
 # Run a 10-second test countdown
-node "$daemon_path" --test 10
-```
-
----
-
-## Setting Up Auto-Start on Login (systemd)
-
-To have the daemon start automatically when you log in:
-
-### Create systemd User Service
-
-```bash
-# Create the service directory
-mkdir -p ~/.config/systemd/user
-
-# Create the service file
-cat > ~/.config/systemd/user/claude-auto-resume.service << 'EOF'
-[Unit]
-Description=Claude Auto Resume Daemon
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/node %h/.claude/auto-resume/auto-resume-daemon.js start
-Restart=on-failure
-RestartSec=10
-Environment=DISPLAY=:0
-
-[Install]
-WantedBy=default.target
-EOF
-```
-
-**Note:** If you installed Node.js via nvm or another method, update the `ExecStart` path:
-```bash
-# Find your node path
-which node
-# Then update the service file accordingly
-```
-
-### Enable and Start
-
-```bash
-# Reload systemd
-systemctl --user daemon-reload
-
-# Enable auto-start on login
-systemctl --user enable claude-auto-resume
-
-# Start now
-systemctl --user start claude-auto-resume
-
-# Check status
-systemctl --user status claude-auto-resume
-```
-
-### Manage the Service
-
-```bash
-# Stop
-systemctl --user stop claude-auto-resume
-
-# Restart
-systemctl --user restart claude-auto-resume
-
-# View logs
-journalctl --user -u claude-auto-resume -f
+node ~/.claude/auto-resume/auto-resume-daemon.js --test 10
 ```
 
 ---
@@ -186,15 +116,13 @@ chmod +x install.sh
 ./install.sh
 ```
 
-### Step 4: Start Daemon
-
-```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js start
-```
+The manual installer will set up hooks and optionally configure systemd for you.
 
 ---
 
 ## Daemon Management
+
+The daemon auto-starts with Claude Code, but you can manage it manually:
 
 ```bash
 # Store daemon path for convenience
@@ -257,18 +185,14 @@ source ~/.bashrc
 nvm install 20
 ```
 
-### Daemon Not Starting
+### Daemon Not Auto-Starting
 
+Check if the SessionStart hook is registered:
 ```bash
-# Check if already running
-pgrep -f "auto-resume-daemon"
-
-# Check Node.js version
-node --version
-
-# Check logs for errors
-cat ~/.claude/auto-resume/daemon.log
+cat ~/.claude/settings.json | grep -A5 "SessionStart"
 ```
+
+If not present, try reinstalling the plugin.
 
 ### Keystrokes Not Being Sent
 
@@ -279,14 +203,14 @@ The daemon uses `xdotool` to send keystrokes. Common issues:
 2. **Running on Wayland:** xdotool requires X11. Try:
    ```bash
    # Run under XWayland
-   GDK_BACKEND=x11 node "$daemon_path" start
+   GDK_BACKEND=x11 node ~/.claude/auto-resume/auto-resume-daemon.js start
    ```
    Or switch to an X11 session at login.
 
 3. **No DISPLAY variable:**
    ```bash
    export DISPLAY=:0
-   node "$daemon_path" start
+   node ~/.claude/auto-resume/auto-resume-daemon.js start
    ```
 
 ### Wayland Compatibility
@@ -296,7 +220,7 @@ If using Wayland (default on newer Ubuntu/Fedora), xdotool may not work. Options
 1. **Switch to X11 session** at login screen
 2. **Use XWayland:**
    ```bash
-   GDK_BACKEND=x11 node "$daemon_path" start
+   GDK_BACKEND=x11 node ~/.claude/auto-resume/auto-resume-daemon.js start
    ```
 3. **Install ydotool** (Wayland alternative - requires additional setup)
 
@@ -305,16 +229,6 @@ If using Wayland (default on newer Ubuntu/Fedora), xdotool may not work. Options
 ```bash
 chmod +x ~/.claude/hooks/rate-limit-hook.js
 chmod +x ~/.claude/auto-resume/auto-resume-daemon.js
-```
-
-### Test the Installation
-
-```bash
-# Verify dependencies
-which node xdotool
-
-# Quick test with 5-second countdown
-node "$daemon_path" --test 5
 ```
 
 ---
@@ -336,12 +250,6 @@ node "$daemon_path" --test 5
 ```bash
 # Stop daemon
 node ~/.claude/auto-resume/auto-resume-daemon.js stop
-
-# Stop and remove systemd service
-systemctl --user stop claude-auto-resume
-systemctl --user disable claude-auto-resume
-rm ~/.config/systemd/user/claude-auto-resume.service
-systemctl --user daemon-reload
 
 # Remove files
 rm -rf ~/.claude/auto-resume
