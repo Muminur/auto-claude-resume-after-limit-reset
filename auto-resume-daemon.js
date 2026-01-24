@@ -1036,6 +1036,7 @@ function main() {
       process.exit(0);
       break;
 
+    case '--config':
     case 'config':
       if (args[1] === 'set') {
         setConfigValue(args[2], args[3]);
@@ -1045,17 +1046,21 @@ function main() {
       process.exit(0);
       break;
 
+    case '--analytics':
     case 'analytics':
       showAnalytics();
       process.exit(0);
       break;
 
+    case '--notify-test':
+    case '--notify':
     case 'notify':
       testNotification().then(() => {
         process.exit(0);
       });
       break;
 
+    case '--gui':
     case 'gui':
       openGui();
       // Give a moment for the command to execute before exiting
