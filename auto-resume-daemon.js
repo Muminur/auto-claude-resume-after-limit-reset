@@ -947,6 +947,54 @@ function showAnalytics() {
 }
 
 /**
+ * Show daemon logs
+ * @param {Object} options - Log options
+ * @param {number} [options.lines=20] - Number of lines to show
+ * @param {boolean} [options.follow=false] - Follow log file (not implemented for CLI)
+ */
+function showLogs(options = {}) {
+  const lines = options.lines || 20;
+  const logFile = path.join(BASE_DIR, 'daemon.log');
+
+  if (!fs.existsSync(logFile)) {
+    log('info', 'No log file found. The daemon may not have run yet.');
+    console.log(`\n${colors.blue}Log file location:${colors.reset} ${logFile}`);
+    return true;
+  }
+
+  try {
+    const content = fs.readFileSync(logFile, 'utf8');
+    const allLines = content.split('\n').filter(line => line.trim());
+
+    if (allLines.length === 0) {
+      log('info', 'Log file is empty');
+      return true;
+    }
+
+    const displayLines = allLines.slice(-lines);
+
+    console.log(`${colors.cyan}Daemon Logs${colors.reset} (last ${displayLines.length} of ${allLines.length} lines):`);
+    console.log(`${colors.blue}Log file:${colors.reset} ${logFile}\n`);
+
+    displayLines.forEach(line => {
+      // Colorize log levels
+      let coloredLine = line
+        .replace(/\[ERROR\]/g, `${colors.red}[ERROR]${colors.reset}`)
+        .replace(/\[WARNING\]/g, `${colors.yellow}[WARNING]${colors.reset}`)
+        .replace(/\[INFO\]/g, `${colors.cyan}[INFO]${colors.reset}`)
+        .replace(/\[SUCCESS\]/g, `${colors.green}[SUCCESS]${colors.reset}`)
+        .replace(/\[DEBUG\]/g, `${colors.magenta}[DEBUG]${colors.reset}`);
+      console.log(coloredLine);
+    });
+
+    return true;
+  } catch (err) {
+    log('error', `Failed to read log file: ${err.message}`);
+    return false;
+  }
+}
+
+/**
  * Test notification system
  * @param {Object} options - Notification options
  * @param {boolean} [options.preferMessageBox=false] - Use MessageBox instead of toast on Windows
@@ -1207,6 +1255,15 @@ function main() {
     case '--analytics':
     case 'analytics':
       showAnalytics();
+      process.exit(0);
+      break;
+
+    case '--logs':
+    case 'logs':
+      // Parse --lines option
+      const linesIndex = args.indexOf('--lines');
+      const logLines = linesIndex !== -1 ? parseInt(args[linesIndex + 1], 10) || 20 : 20;
+      showLogs({ lines: logLines });
       process.exit(0);
       break;
 
