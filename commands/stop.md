@@ -10,10 +10,19 @@ Stop the running auto-resume daemon.
 
 ### Execute
 
-Run this command to stop the daemon:
-
+**macOS/Linux:**
 ```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" stop
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js stop
+```
+
+**Windows (PowerShell):**
+```powershell
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" stop
+```
+
+**Windows (CMD):**
+```cmd
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" stop
 ```
 
 ### Expected Output
@@ -31,4 +40,18 @@ DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/
 
 ### Note
 
-The daemon will auto-start again the next time you open Claude Code (via the SessionStart hook).
+The daemon will auto-start again the next time you open Claude Code (via the SessionStart hook). To permanently disable auto-start, you would need to remove or disable the plugin.
+
+### Force Stop (if daemon is unresponsive)
+
+**macOS/Linux:**
+```bash
+pkill -f "auto-resume-daemon.js"
+rm ~/.claude/auto-resume/daemon.pid
+```
+
+**Windows (PowerShell):**
+```powershell
+Get-Process -Name "node" | Where-Object { $_.CommandLine -like "*auto-resume-daemon*" } | Stop-Process -Force
+Remove-Item "$env:USERPROFILE\.claude\auto-resume\daemon.pid" -ErrorAction SilentlyContinue
+```

@@ -10,10 +10,19 @@ Shows rate limit statistics, usage patterns, and predictions based on historical
 
 ### Execute
 
-Run this command to view analytics:
-
+**macOS/Linux:**
 ```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" --analytics
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js analytics
+```
+
+**Windows (PowerShell):**
+```powershell
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" analytics
+```
+
+**Windows (CMD):**
+```cmd
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" analytics
 ```
 
 ### Analytics Output
@@ -40,15 +49,15 @@ Total Sessions: 156
 Active Sessions: 3
 
 Last 7 Days Trend:
-Mon: ████████░░ 12 events
-Tue: ██████░░░░ 8 events
-Wed: ███████░░░ 10 events
+Mon: 12 events
+Tue: 8 events
+Wed: 10 events
 ...
 ```
 
 ### Analytics Data Location
 
-- **Linux/macOS:** `~/.claude/auto-resume/analytics.json`
+- **macOS/Linux:** `~/.claude/auto-resume/analytics.json`
 - **Windows:** `%USERPROFILE%\.claude\auto-resume\analytics.json`
 
 ### Use Cases

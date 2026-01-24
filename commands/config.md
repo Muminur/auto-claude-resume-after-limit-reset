@@ -10,20 +10,33 @@ View or modify the auto-resume daemon configuration settings.
 
 ### View Current Config
 
+**macOS/Linux:**
 ```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" --config
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js config
+```
+
+**Windows (PowerShell):**
+```powershell
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" config
+```
+
+**Windows (CMD):**
+```cmd
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" config
 ```
 
 ### Edit Config
 
-The config file is located at: `~/.claude/auto-resume/config.json`
+The config file is located at:
+- **macOS/Linux:** `~/.claude/auto-resume/config.json`
+- **Windows:** `%USERPROFILE%\.claude\auto-resume\config.json`
 
-**Direct edit (Linux/macOS):**
+**Direct edit (macOS/Linux):**
 ```bash
 nano ~/.claude/auto-resume/config.json
 ```
 
-**Direct edit (Windows):**
+**Direct edit (Windows PowerShell):**
 ```powershell
 notepad "$env:USERPROFILE\.claude\auto-resume\config.json"
 ```
@@ -42,6 +55,8 @@ notepad "$env:USERPROFILE\.claude\auto-resume\config.json"
 | `websocket.port` | number | 3847 | WebSocket server port |
 | `api.enabled` | boolean | false | Enable REST API |
 | `api.port` | number | 3848 | REST API port |
+| `gui.enabled` | boolean | true | Enable GUI dashboard |
+| `gui.port` | number | 3737 | GUI dashboard port |
 | `analytics.enabled` | boolean | true | Enable analytics tracking |
 
 ### Example Config
@@ -64,6 +79,10 @@ notepad "$env:USERPROFILE\.claude\auto-resume\config.json"
     "enabled": false,
     "port": 3848
   },
+  "gui": {
+    "enabled": true,
+    "port": 3737
+  },
   "analytics": {
     "enabled": true
   }
@@ -72,16 +91,28 @@ notepad "$env:USERPROFILE\.claude\auto-resume\config.json"
 
 ### Reset to Defaults
 
+**macOS/Linux:**
 ```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" --reset-config
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js reset-config
+```
+
+**Windows (PowerShell):**
+```powershell
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" reset-config
 ```
 
 ### Apply Changes
 
 After editing the config file, restart the daemon:
 
+**macOS/Linux:**
 ```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" restart
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js restart
+```
+
+**Windows (PowerShell):**
+```powershell
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" restart
 ```
 
 ### Common Configuration Tasks

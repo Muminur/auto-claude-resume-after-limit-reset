@@ -10,10 +10,19 @@ Sends a test notification to verify that desktop notifications are configured co
 
 ### Execute
 
-Run this command to send a test notification:
-
+**macOS/Linux:**
 ```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" --notify-test
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js notify
+```
+
+**Windows (PowerShell):**
+```powershell
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" notify
+```
+
+**Windows (CMD):**
+```cmd
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" notify
 ```
 
 ### Expected Behavior
@@ -32,19 +41,16 @@ You should see a desktop notification with:
    - **Windows:** Settings → System → Notifications → Enable notifications
    - **Linux:** Check your desktop environment notification settings
 
-2. **Verify node-notifier is installed:**
-   ```bash
-   npm list node-notifier
-   ```
+2. **Check daemon logs:**
 
-3. **Check daemon logs:**
+   **macOS/Linux:**
    ```bash
    tail -20 ~/.claude/auto-resume/daemon.log
    ```
 
-   On Windows (if tail is unavailable):
-   ```bash
-   cat ~/.claude/auto-resume/daemon.log | head -20
+   **Windows (PowerShell):**
+   ```powershell
+   Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 20
    ```
 
 ### Notification Events
@@ -58,7 +64,16 @@ The daemon sends notifications for:
 ### Configuration
 
 Notification preferences can be configured in:
-- **Linux/macOS:** `~/.claude/auto-resume/config.json`
+- **macOS/Linux:** `~/.claude/auto-resume/config.json`
 - **Windows:** `%USERPROFILE%\.claude\auto-resume\config.json`
 
 Set `notifications.enabled` to `true` or `false` to control notifications.
+
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  }
+}
+```

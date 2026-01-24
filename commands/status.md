@@ -10,10 +10,19 @@ Check whether the auto-resume daemon is currently running and view its status.
 
 ### Execute
 
-Run this command to check status:
-
+**macOS/Linux:**
 ```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" status
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js status
+```
+
+**Windows (PowerShell):**
+```powershell
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" status
+```
+
+**Windows (CMD):**
+```cmd
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" status
 ```
 
 ### Expected Output
@@ -21,7 +30,16 @@ DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/
 **If running:**
 ```
 [SUCCESS] Daemon is running (PID: 12345)
-[INFO] Status: { ... current rate limit info if any ... }
+[INFO] Uptime: 2 hours, 15 minutes
+[INFO] Status: Watching for rate limits...
+```
+
+**If running with active rate limit:**
+```
+[SUCCESS] Daemon is running (PID: 12345)
+[WARNING] Rate limit active!
+[INFO] Resuming in: 00:45:30
+[INFO] Reset time: 2:00 PM
 ```
 
 **If not running:**
@@ -29,7 +47,13 @@ DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/
 [INFO] Daemon is not running (no PID file)
 ```
 
+### PID File Location
+
+- **macOS/Linux:** `~/.claude/auto-resume/daemon.pid`
+- **Windows:** `%USERPROFILE%\.claude\auto-resume\daemon.pid`
+
 ### Next Steps
 
 - If not running, daemon will auto-start on next Claude Code session
-- Or manually start using the `/auto-resume:start` command
+- Or manually start using `/auto-resume:start`
+- Use `/auto-resume:gui` to view the web dashboard

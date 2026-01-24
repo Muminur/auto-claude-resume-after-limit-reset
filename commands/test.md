@@ -1,6 +1,6 @@
 ---
 description: Test the auto-resume keystroke sending with a countdown
-argument-hint: seconds (default 30)
+argument-hint: seconds (default 10)
 ---
 
 # Auto-Resume Test
@@ -11,19 +11,31 @@ Test the auto-resume functionality by running a countdown and then sending "cont
 
 ### Arguments
 
-- `$ARGUMENTS` - Number of seconds to countdown (default: 30)
+- `$ARGUMENTS` - Number of seconds to countdown (default: 10)
 
 ### Execute
 
-Run this command to test with specified seconds:
-
+**macOS/Linux:**
 ```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" --test $ARGUMENTS
+# With custom countdown (e.g., 30 seconds)
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js test $ARGUMENTS
+
+# Default 10 seconds
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js test 10
 ```
 
-If no argument provided, use 10 seconds:
-```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" --test 10
+**Windows (PowerShell):**
+```powershell
+# With custom countdown (e.g., 30 seconds)
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" test $ARGUMENTS
+
+# Default 10 seconds
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" test 10
+```
+
+**Windows (CMD):**
+```cmd
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" test 10
 ```
 
 ### Warning
@@ -36,6 +48,15 @@ This will actually send "continue" + Enter keystrokes to your terminal windows a
 [WARNING] [TEST MODE] Simulating rate limit with X second countdown
 [WARNING] WARNING: This will send "continue" + Enter to terminal windows!
 [TEST] Sending "continue" in 00:00:10...
+[TEST] Sending "continue" in 00:00:09...
+...
 [TEST] Countdown complete! Sending keystrokes...
 [SUCCESS] [TEST] Test completed successfully!
 ```
+
+### Use Cases
+
+- Verify keystroke sending works on your system
+- Test terminal window detection
+- Debug issues with the resume functionality
+- Demo the plugin to others

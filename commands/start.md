@@ -10,10 +10,19 @@ Manually start the auto-resume daemon. Note: The daemon auto-starts when you ope
 
 ### Execute
 
-Run this command to start the daemon:
-
+**macOS/Linux:**
 ```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" start
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js start
+```
+
+**Windows (PowerShell):**
+```powershell
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" start
+```
+
+**Windows (CMD):**
+```cmd
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" start
 ```
 
 ### Expected Output
@@ -28,9 +37,23 @@ DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/
 **If already running:**
 ```
 [WARNING] Daemon is already running (PID: 12345)
-[INFO] Run "node auto-resume-daemon.js stop" to stop it first
+[INFO] Use "stop" command to stop it first, or "restart" to restart
+```
+
+### Running in Background
+
+To start the daemon in background mode (detached from terminal):
+
+**macOS/Linux:**
+```bash
+nohup node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js start > /dev/null 2>&1 &
+```
+
+**Windows (PowerShell):**
+```powershell
+Start-Process -NoNewWindow node -ArgumentList "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js", "start"
 ```
 
 ### Note
 
-The daemon runs in the foreground when started this way. For background operation, the SessionStart hook handles this automatically.
+The daemon runs in the foreground when started directly. For automatic background operation, the plugin's SessionStart hook handles this automatically when Claude Code starts.
