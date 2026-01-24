@@ -948,8 +948,10 @@ function showAnalytics() {
 
 /**
  * Test notification system
+ * @param {Object} options - Notification options
+ * @param {boolean} [options.preferMessageBox=false] - Use MessageBox instead of toast on Windows
  */
-async function testNotification() {
+async function testNotification(options = {}) {
   if (!NotificationManager) {
     log('error', 'notification-manager module not available');
     return false;
@@ -960,7 +962,8 @@ async function testNotification() {
     notifier.init({
       enabled: true,
       sound: true,
-      useFallback: true
+      useFallback: true,
+      preferMessageBox: options.preferMessageBox || false
     });
 
     log('info', 'Sending test notification...');
@@ -1210,7 +1213,9 @@ function main() {
     case '--notify-test':
     case '--notify':
     case 'notify':
-      testNotification().then(() => {
+      // Check for --prefer-messagebox or -m flag
+      const preferMessageBox = args.includes('--prefer-messagebox') || args.includes('-m');
+      testNotification({ preferMessageBox }).then(() => {
         process.exit(0);
       });
       break;

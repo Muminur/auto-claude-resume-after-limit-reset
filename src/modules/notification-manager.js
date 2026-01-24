@@ -28,7 +28,8 @@ class NotificationManager {
       enabled: true,
       sound: true,
       timeout: 10, // seconds
-      useFallback: true // Enable Windows fallback
+      useFallback: true, // Enable Windows fallback
+      preferMessageBox: false // Use MessageBox as primary on Windows (bypasses toast)
     };
     this.notifier = null;
     this.initialized = false;
@@ -42,6 +43,7 @@ class NotificationManager {
    * @param {boolean} [config.sound=true] - Enable/disable notification sounds
    * @param {number} [config.timeout=10] - Notification timeout in seconds
    * @param {boolean} [config.useFallback=true] - Enable Windows PowerShell fallback
+   * @param {boolean} [config.preferMessageBox=false] - Use MessageBox as primary on Windows (bypasses toast)
    * @param {Object} [config.logger] - Logger object with log methods
    * @returns {boolean} True if initialized successfully
    */
@@ -94,6 +96,15 @@ class NotificationManager {
       if (!this.config.enabled) {
         this._log('debug', 'Notifications disabled, skipping notification');
         return false;
+      }
+
+      // On Windows, use MessageBox directly if preferMessageBox is enabled
+      // This bypasses toast notifications which may not work on some systems
+      if (this.config.preferMessageBox && process.platform === 'win32') {
+        const titleText = title || 'Claude Code Auto-Resume';
+        const messageText = message || '';
+        this._log('debug', 'Using MessageBox as preferred notification method');
+        return await this._showWindowsFallback(titleText, messageText);
       }
 
       // Check if notifier is available

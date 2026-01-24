@@ -505,7 +505,8 @@ describe('NotificationManager', () => {
         enabled: true,
         sound: false,
         timeout: 15,
-        useFallback: true // Default value for useFallback
+        useFallback: true, // Default value for useFallback
+        preferMessageBox: false // Default value for preferMessageBox
       });
 
       // Verify it's a copy, not reference
