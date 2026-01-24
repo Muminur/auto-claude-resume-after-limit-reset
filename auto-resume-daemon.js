@@ -1080,31 +1080,30 @@ async function openGui() {
     }
   }
 
-  // Legacy fallback: open file directly
-  const guiPath = path.join(__dirname, 'gui', 'index.html');
-
-  if (!fs.existsSync(guiPath)) {
-    log('error', `GUI not found at: ${guiPath}`);
-    return false;
-  }
-
+  // Open HTTP URL instead of file (server should be running via daemon)
+  const guiUrl = 'http://localhost:3737';
   const platform = os.platform();
   let command;
 
   if (platform === 'win32') {
-    command = `start "" "${guiPath}"`;
+    command = `start "" "${guiUrl}"`;
   } else if (platform === 'darwin') {
-    command = `open "${guiPath}"`;
+    command = `open "${guiUrl}"`;
   } else {
-    command = `xdg-open "${guiPath}"`;
+    command = `xdg-open "${guiUrl}"`;
   }
 
-  log('info', `Opening GUI dashboard: ${guiPath}`);
+  log('info', `Opening GUI dashboard: ${guiUrl}`);
 
   exec(command, (error) => {
     if (error) {
       log('error', `Failed to open GUI: ${error.message}`);
-      log('info', `You can manually open: ${guiPath}`);
+      log('info', `You can manually open: ${guiUrl}`);
+      // Fallback info for local file
+      const guiPath = path.join(__dirname, 'gui', 'index.html');
+      if (fs.existsSync(guiPath)) {
+        log('info', `Or open local file: ${guiPath}`);
+      }
     } else {
       log('success', 'GUI dashboard opened in default browser');
     }
