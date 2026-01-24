@@ -23,6 +23,9 @@ describe('PluginLoader', () => {
   });
 
   beforeEach(() => {
+    // Reset all modules to ensure clean state between tests
+    jest.resetModules();
+
     // Clear previous test plugins
     if (fs.existsSync(testPluginsDir)) {
       fs.readdirSync(testPluginsDir).forEach(file => {
@@ -35,9 +38,13 @@ describe('PluginLoader', () => {
       });
     }
 
-    // Clear require cache for test plugins
+    // Clear require cache for test plugins (handle Windows paths)
+    const normalizedTestDir = testPluginsDir.replace(/\\/g, '/');
     Object.keys(require.cache).forEach(key => {
-      if (key.startsWith(testPluginsDir)) {
+      const normalizedKey = key.replace(/\\/g, '/');
+      if (normalizedKey.includes(normalizedTestDir) ||
+          normalizedKey.includes('plugin-loader-test-') ||
+          key.startsWith(testPluginsDir)) {
         delete require.cache[key];
       }
     });
@@ -62,6 +69,20 @@ describe('PluginLoader', () => {
   // Helper to create a plugin file
   const createPlugin = (name, plugin) => {
     const pluginPath = path.join(testPluginsDir, `${name}.js`);
+    // Clear all require cache entries that match this path
+    Object.keys(require.cache).forEach(key => {
+      if (key.includes(name + '.js') && key.includes(testPluginsDir.replace(/\\/g, '/'))) {
+        delete require.cache[key];
+      }
+    });
+    // Also try the normalized path
+    const normalizedPath = pluginPath.replace(/\\/g, '/');
+    if (require.cache[normalizedPath]) {
+      delete require.cache[normalizedPath];
+    }
+    if (require.cache[pluginPath]) {
+      delete require.cache[pluginPath];
+    }
     // Handle plugins with hooks (functions)
     if (plugin.hooks) {
       const hooksStr = Object.keys(plugin.hooks)
@@ -85,7 +106,42 @@ describe('PluginLoader', () => {
   // Helper to create error plugin
   const createErrorPlugin = (name, errorMsg) => {
     const pluginPath = path.join(testPluginsDir, `${name}.js`);
+    // Clear all require cache entries that match this path
+    Object.keys(require.cache).forEach(key => {
+      if (key.includes(name + '.js') && key.includes(testPluginsDir.replace(/\\/g, '/'))) {
+        delete require.cache[key];
+      }
+    });
+    // Also try the normalized path
+    const normalizedPath = pluginPath.replace(/\\/g, '/');
+    if (require.cache[normalizedPath]) {
+      delete require.cache[normalizedPath];
+    }
+    if (require.cache[pluginPath]) {
+      delete require.cache[pluginPath];
+    }
     fs.writeFileSync(pluginPath, `throw new Error('${errorMsg}');`);
+    return pluginPath;
+  };
+
+  // Helper to write raw plugin content and clear cache
+  const writePluginFile = (name, content) => {
+    const pluginPath = path.join(testPluginsDir, `${name}.js`);
+    // Clear all require cache entries that match this path
+    Object.keys(require.cache).forEach(key => {
+      if (key.includes(name + '.js') && key.includes(testPluginsDir.replace(/\\/g, '/'))) {
+        delete require.cache[key];
+      }
+    });
+    // Also try the normalized path
+    const normalizedPath = pluginPath.replace(/\\/g, '/');
+    if (require.cache[normalizedPath]) {
+      delete require.cache[normalizedPath];
+    }
+    if (require.cache[pluginPath]) {
+      delete require.cache[pluginPath];
+    }
+    fs.writeFileSync(pluginPath, content);
     return pluginPath;
   };
 
@@ -241,14 +297,16 @@ describe('PluginLoader', () => {
     });
 
     it('should reject plugin with invalid hook name', () => {
-      const pluginPath = path.join(testPluginsDir, 'bad.js');
+      const pluginPath = path.join(testPluginsDir, 'invalid-hook.js');
       fs.writeFileSync(pluginPath, `
         module.exports = {
-          name: 'bad',
+          name: 'invalid-hook',
           version: '1.0.0',
           hooks: { invalidHook: () => {} }
         };
       `);
+      // Clear require cache for this specific file
+      delete require.cache[require.resolve(pluginPath)];
 
       const result = loader.load(pluginPath);
 
@@ -257,14 +315,16 @@ describe('PluginLoader', () => {
     });
 
     it('should reject plugin with non-function hook', () => {
-      const pluginPath = path.join(testPluginsDir, 'bad.js');
+      const pluginPath = path.join(testPluginsDir, 'non-function-hook.js');
       fs.writeFileSync(pluginPath, `
         module.exports = {
-          name: 'bad',
+          name: 'non-function-hook',
           version: '1.0.0',
           hooks: { onRateLimitDetected: 'not a function' }
         };
       `);
+      // Clear require cache for this specific file
+      delete require.cache[require.resolve(pluginPath)];
 
       const result = loader.load(pluginPath);
 
@@ -405,6 +465,10 @@ describe('PluginLoader', () => {
 
     it('should return list of loaded plugins with metadata', () => {
       const path1 = path.join(testPluginsDir, 'plugin1.js');
+      // Clear require cache for this specific file
+      if (require.cache[path1]) {
+        delete require.cache[path1];
+      }
       fs.writeFileSync(path1, `
         module.exports = {
           name: 'plugin1',
@@ -499,8 +563,7 @@ describe('PluginLoader', () => {
     });
 
     it('should call hook on enabled plugins', async () => {
-      const path1 = path.join(testPluginsDir, 'plugin1.js');
-      fs.writeFileSync(path1, `
+      const path1 = writePluginFile('plugin1', `
         module.exports = {
           name: 'plugin1',
           version: '1.0.0',
@@ -524,8 +587,7 @@ describe('PluginLoader', () => {
     });
 
     it('should skip disabled plugins', async () => {
-      const path1 = path.join(testPluginsDir, 'plugin1.js');
-      fs.writeFileSync(path1, `
+      const path1 = writePluginFile('plugin1', `
         module.exports = {
           name: 'plugin1',
           version: '1.0.0',
@@ -546,8 +608,7 @@ describe('PluginLoader', () => {
     });
 
     it('should skip plugins without the hook', async () => {
-      const path1 = path.join(testPluginsDir, 'plugin1.js');
-      fs.writeFileSync(path1, `
+      const path1 = writePluginFile('plugin1', `
         module.exports = {
           name: 'plugin1',
           version: '1.0.0',
@@ -563,8 +624,7 @@ describe('PluginLoader', () => {
     });
 
     it('should isolate errors - one plugin failure does not affect others', async () => {
-      const path1 = path.join(testPluginsDir, 'plugin1.js');
-      fs.writeFileSync(path1, `
+      const path1 = writePluginFile('plugin1', `
         module.exports = {
           name: 'plugin1',
           version: '1.0.0',
@@ -576,8 +636,7 @@ describe('PluginLoader', () => {
         };
       `);
 
-      const path2 = path.join(testPluginsDir, 'plugin2.js');
-      fs.writeFileSync(path2, `
+      const path2 = writePluginFile('plugin2', `
         module.exports = {
           name: 'plugin2',
           version: '1.0.0',
@@ -604,8 +663,7 @@ describe('PluginLoader', () => {
     it('should timeout hooks after 30 seconds', async () => {
       jest.useFakeTimers();
 
-      const path1 = path.join(testPluginsDir, 'slow.js');
-      fs.writeFileSync(path1, `
+      const path1 = writePluginFile('slow', `
         module.exports = {
           name: 'slow',
           version: '1.0.0',
@@ -638,8 +696,7 @@ describe('PluginLoader', () => {
     });
 
     it('should pass event data to hooks', async () => {
-      const path1 = path.join(testPluginsDir, 'plugin1.js');
-      fs.writeFileSync(path1, `
+      const path1 = writePluginFile('plugin1', `
         module.exports = {
           name: 'plugin1',
           version: '1.0.0',
@@ -661,8 +718,7 @@ describe('PluginLoader', () => {
     });
 
     it('should handle hooks without event parameter', async () => {
-      const path1 = path.join(testPluginsDir, 'plugin1.js');
-      fs.writeFileSync(path1, `
+      const path1 = writePluginFile('plugin1', `
         module.exports = {
           name: 'plugin1',
           version: '1.0.0',
@@ -683,10 +739,9 @@ describe('PluginLoader', () => {
     });
 
     it('should handle synchronous hook functions', async () => {
-      const path1 = path.join(testPluginsDir, 'plugin1.js');
-      fs.writeFileSync(path1, `
+      const path1 = writePluginFile('sync-hook-plugin', `
         module.exports = {
-          name: 'plugin1',
+          name: 'sync-hook-plugin',
           version: '1.0.0',
           hooks: {
             onRateLimitDetected: () => {
@@ -736,8 +791,7 @@ describe('PluginLoader', () => {
     });
 
     it('should handle hook execution errors gracefully', async () => {
-      const path1 = path.join(testPluginsDir, 'error.js');
-      fs.writeFileSync(path1, `
+      const path1 = writePluginFile('error', `
         module.exports = {
           name: 'error',
           version: '1.0.0',
@@ -764,8 +818,7 @@ describe('PluginLoader', () => {
     });
 
     it('should reject plugin with wrong type for name', () => {
-      const pluginPath = path.join(testPluginsDir, 'bad.js');
-      fs.writeFileSync(pluginPath, 'module.exports = { name: 123, version: "1.0.0" };');
+      const pluginPath = writePluginFile('bad-name-type', 'module.exports = { name: 123, version: "1.0.0" };');
 
       const result = loader.load(pluginPath);
 
@@ -774,8 +827,7 @@ describe('PluginLoader', () => {
     });
 
     it('should reject plugin with wrong type for hooks', () => {
-      const pluginPath = path.join(testPluginsDir, 'bad.js');
-      fs.writeFileSync(pluginPath, 'module.exports = { name: "test", version: "1.0.0", hooks: "bad" };');
+      const pluginPath = writePluginFile('bad-hooks-type', 'module.exports = { name: "test", version: "1.0.0", hooks: "bad" };');
 
       const result = loader.load(pluginPath);
 
@@ -784,8 +836,7 @@ describe('PluginLoader', () => {
     });
 
     it('should accept all valid hook names', () => {
-      const path1 = path.join(testPluginsDir, 'test.js');
-      fs.writeFileSync(path1, `
+      const path1 = writePluginFile('test', `
         module.exports = {
           name: 'test',
           version: '1.0.0',

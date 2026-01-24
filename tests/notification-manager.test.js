@@ -153,6 +153,7 @@ describe('NotificationManager', () => {
 
     test('skips notification when not initialized', async () => {
       manager.initialized = false;
+      manager.config.useFallback = false; // Disable fallback to avoid platform-specific calls
       const result = await manager.notify('Test Title', 'Test Message');
 
       expect(result).toBe(false);
@@ -216,6 +217,9 @@ describe('NotificationManager', () => {
     });
 
     test('handles notification error gracefully', async () => {
+      // Disable fallback to avoid platform-specific calls during test
+      manager.config.useFallback = false;
+
       // Mock error in notify
       manager.notifier.notify.mockImplementationOnce((options, callback) => {
         callback(new Error('Notification failed'), null);
@@ -500,7 +504,8 @@ describe('NotificationManager', () => {
       expect(config).toEqual({
         enabled: true,
         sound: false,
-        timeout: 15
+        timeout: 15,
+        useFallback: true // Default value for useFallback
       });
 
       // Verify it's a copy, not reference
@@ -542,6 +547,7 @@ describe('NotificationManager', () => {
     test('notify returns false when notifier unavailable', async () => {
       manager.initialized = false;
       manager.notifier = null;
+      manager.config.useFallback = false; // Disable fallback to avoid platform-specific calls
 
       const result = await manager.notify('Title', 'Message');
 
@@ -551,6 +557,7 @@ describe('NotificationManager', () => {
     test('notifyRateLimit returns false when notifier unavailable', async () => {
       manager.initialized = false;
       manager.notifier = null;
+      manager.config.useFallback = false; // Disable fallback to avoid platform-specific calls
 
       const resetTime = new Date(Date.now() + 10 * 60 * 1000);
       const result = await manager.notifyRateLimit(resetTime);
@@ -561,6 +568,7 @@ describe('NotificationManager', () => {
     test('notifyResume returns false when notifier unavailable', async () => {
       manager.initialized = false;
       manager.notifier = null;
+      manager.config.useFallback = false; // Disable fallback to avoid platform-specific calls
 
       const result = await manager.notifyResume();
 
