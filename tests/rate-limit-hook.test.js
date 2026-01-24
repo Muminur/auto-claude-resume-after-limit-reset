@@ -261,6 +261,69 @@ describe('rate-limit-hook - Subagent Transcript Scanning', () => {
     });
 
     describe('edge cases', () => {
+      it('should handle Buffer objects in async iterator gracefully', async () => {
+        // Create a mock stream that yields Buffer objects instead of strings
+        const mockStreamWithBuffer = {
+          on: jest.fn(),
+          pipe: jest.fn(),
+          [Symbol.asyncIterator]: async function* () {
+            yield Buffer.from('{"type": "user", "message": {}}');
+            yield Buffer.from(JSON.stringify({
+              type: 'assistant',
+              error: 'rate_limit',
+              message: {
+                content: [{
+                  type: 'text',
+                  text: "You've hit your limit · resets 7pm (UTC)"
+                }]
+              }
+            }));
+          }
+        };
+
+        fs.existsSync.mockReturnValue(true);
+        fs.createReadStream.mockReturnValue(mockStreamWithBuffer);
+
+        // This should NOT throw "line.trim is not a function"
+        const result = await analyzeTranscript(mockTranscriptPath);
+
+        expect(result).not.toBeNull();
+        expect(result.detected).toBe(true);
+      });
+
+      it('should handle non-string values in async iterator without crashing', async () => {
+        // Create a mock stream that yields various non-string types
+        const mockStreamWithMixed = {
+          on: jest.fn(),
+          pipe: jest.fn(),
+          [Symbol.asyncIterator]: async function* () {
+            yield null;  // Should be skipped
+            yield undefined;  // Should be skipped
+            yield 123;  // Should be skipped
+            yield { someObject: true };  // Should be skipped
+            yield JSON.stringify({
+              type: 'assistant',
+              error: 'rate_limit',
+              message: {
+                content: [{
+                  type: 'text',
+                  text: "You've hit your limit · resets 8pm (America/New_York)"
+                }]
+              }
+            });
+          }
+        };
+
+        fs.existsSync.mockReturnValue(true);
+        fs.createReadStream.mockReturnValue(mockStreamWithMixed);
+
+        // Should NOT throw TypeError
+        const result = await analyzeTranscript(mockTranscriptPath);
+
+        expect(result).not.toBeNull();
+        expect(result.detected).toBe(true);
+      });
+
       it('should handle empty subagents directory', async () => {
         mockReadlineInterface([]);
         fs.existsSync.mockReturnValue(true);

@@ -216,10 +216,13 @@ async function analyzeTranscript(transcriptPath) {
   let sessionId = null;
 
   for await (const line of lineIterator) {
-    if (!line.trim()) continue;
+    // Handle non-string values (Buffer, null, undefined, objects)
+    const lineStr = typeof line === 'string' ? line :
+                    (Buffer.isBuffer(line) ? line.toString('utf-8') : String(line || ''));
+    if (!lineStr.trim()) continue;
 
     try {
-      const entry = JSON.parse(line);
+      const entry = JSON.parse(lineStr);
 
       // Extract session ID if available
       if (entry.session_id || entry.sessionId) {
