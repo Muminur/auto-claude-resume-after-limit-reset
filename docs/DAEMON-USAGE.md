@@ -2,17 +2,41 @@
 
 The auto-resume daemon is a background service that continuously watches for Claude Code rate limits and automatically resumes sessions when limits reset.
 
+## Daemon Location
+
+The daemon location depends on how you installed:
+
+| Installation Method | Daemon Path |
+|---------------------|-------------|
+| **Plugin** (recommended) | `~/.claude/plugins/cache/auto-claude-resume/auto-resume/*/auto-resume-daemon.js` |
+| **Manual** | `~/.claude/auto-resume/auto-resume-daemon.js` |
+
+**Tip:** Use auto-discovery to find the daemon regardless of installation method:
+```bash
+DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
+```
+
 ## Quick Start
 
+**Using slash commands (in Claude Code):**
+```
+/auto-resume:start     # Start the daemon
+/auto-resume:status    # Check if it's running
+/auto-resume:stop      # Stop the daemon
+```
+
+**Using terminal (auto-discovery):**
 ```bash
+DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
+
 # Start the daemon
-node auto-resume-daemon.js start
+node "$DAEMON" start
 
 # Check if it's running
-node auto-resume-daemon.js status
+node "$DAEMON" status
 
 # Stop the daemon
-node auto-resume-daemon.js stop
+node "$DAEMON" stop
 ```
 
 ## How It Works

@@ -283,39 +283,37 @@ See [gui/README.md](gui/README.md) for detailed documentation.
 
 ## Daemon Management
 
-The daemon auto-starts, but you can manage it manually if needed:
+The daemon auto-starts, but you can manage it using slash commands or manually.
 
-**Windows (PowerShell):**
-```powershell
-$daemon = "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js"
+### Using Slash Commands (Recommended)
 
-# Check status
-node $daemon status
+When using Claude Code, the easiest way to manage the daemon is through slash commands:
 
-# Stop daemon
-node $daemon stop
-
-# Restart daemon
-node $daemon restart
-
-# View logs
-Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 20
+```
+/auto-resume:status    # Check if daemon is running
+/auto-resume:start     # Start the daemon
+/auto-resume:stop      # Stop the daemon
+/auto-resume:logs      # View daemon logs
+/auto-resume:reset     # Reset rate limit status
 ```
 
-**macOS / Linux:**
+### Manual Management (Terminal)
+
+For manual management outside Claude Code, note that the daemon location depends on how you installed:
+
+- **Plugin install**: `~/.claude/plugins/cache/auto-claude-resume/auto-resume/*/auto-resume-daemon.js`
+- **Manual install**: `~/.claude/auto-resume/auto-resume-daemon.js`
+
+**Auto-discovery command (works for both):**
 ```bash
-daemon=~/.claude/auto-resume/auto-resume-daemon.js
+DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
+node "$DAEMON" status
+node "$DAEMON" stop
+node "$DAEMON" restart
+```
 
-# Check status
-node $daemon status
-
-# Stop daemon
-node $daemon stop
-
-# Restart daemon
-node $daemon restart
-
-# View logs
+**View logs:**
+```bash
 tail -f ~/.claude/auto-resume/daemon.log
 ```
 
@@ -433,13 +431,15 @@ Then install:
    node --version
    ```
 
-2. Check daemon status:
-   - **Windows:** `node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" status`
-   - **macOS/Linux:** `node ~/.claude/auto-resume/auto-resume-daemon.js status`
+2. Check daemon status using slash command:
+   ```
+   /auto-resume:status
+   ```
 
 3. Check logs:
-   - **Windows:** `Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 20`
-   - **macOS/Linux:** `tail -20 ~/.claude/auto-resume/daemon.log`
+   ```bash
+   tail -20 ~/.claude/auto-resume/daemon.log
+   ```
 
 ### Hook Not Detecting Rate Limits
 

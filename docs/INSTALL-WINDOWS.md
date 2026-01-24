@@ -40,11 +40,17 @@ Open Claude Code and run:
 
 ### First Run Setup
 
-After installation, complete the initial setup:
+After installation, verify everything works using slash commands in Claude Code:
 
+```
+/auto-resume:status    # Check daemon status
+/auto-resume:test 10   # Test with 10-second countdown
+```
+
+Or using terminal (with auto-discovery):
 ```powershell
-# 1. Verify installation
-$daemon = "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js"
+# Find and check daemon status
+$daemon = (Get-ChildItem -Path "$env:USERPROFILE\.claude" -Recurse -Filter "auto-resume-daemon.js" | Select-Object -First 1).FullName
 node $daemon status
 
 # 2. Create configuration file (if not already present)

@@ -25,27 +25,17 @@ In Claude Code, run:
 
 ### Verify Installation (Optional)
 
-#### Windows (PowerShell)
-
-```powershell
-# Check if hooks are registered
-Get-Content "$env:USERPROFILE\.claude\settings.json" | Select-String "auto-resume"
-
-# Check daemon status
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" status
-
-# View logs
-Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 20
+**Using slash commands (in Claude Code):**
+```
+/auto-resume:status    # Check daemon status
+/auto-resume:logs      # View recent logs
 ```
 
-#### macOS / Linux (Terminal)
-
+**Using terminal (auto-discovery):**
 ```bash
-# Check if hooks are registered
-cat ~/.claude/settings.json | grep -A5 "SessionStart"
-
-# Check daemon status
-node ~/.claude/auto-resume/auto-resume-daemon.js status
+# Find and check daemon status
+DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
+node "$DAEMON" status
 
 # View logs
 tail -20 ~/.claude/auto-resume/daemon.log
@@ -139,16 +129,16 @@ powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 
 After installation, verify everything works:
 
-### Windows (PowerShell)
-```powershell
-# Test with 10-second countdown
-node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --test 10
+**Using slash command (in Claude Code):**
+```
+/auto-resume:test 10
 ```
 
-### macOS / Linux (Terminal)
+**Using terminal (auto-discovery):**
 ```bash
 # Test with 10-second countdown
-node ~/.claude/auto-resume/auto-resume-daemon.js --test 10
+DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
+node "$DAEMON" --test 10
 ```
 
 ---
