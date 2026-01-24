@@ -1006,12 +1006,25 @@ async function testNotification(options = {}) {
   }
 
   try {
+    // Read preferMessageBox from config if not explicitly passed
+    let preferMessageBox = options.preferMessageBox || false;
+    if (!options.preferMessageBox && configManager) {
+      try {
+        const config = configManager.getConfig();
+        if (config.notifications && config.notifications.preferMessageBox) {
+          preferMessageBox = true;
+        }
+      } catch (e) {
+        // Ignore config errors, use default
+      }
+    }
+
     const notifier = new NotificationManager();
     notifier.init({
       enabled: true,
       sound: true,
       useFallback: true,
-      preferMessageBox: options.preferMessageBox || false
+      preferMessageBox
     });
 
     log('info', 'Sending test notification...');

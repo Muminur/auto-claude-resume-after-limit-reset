@@ -100,7 +100,9 @@ class NotificationManager {
 
       // On Windows, use MessageBox directly if preferMessageBox is enabled
       // This bypasses toast notifications which may not work on some systems
-      if (this.config.preferMessageBox && process.platform === 'win32') {
+      // Skip MessageBox in CI/test environments as it blocks waiting for user input
+      const isCI = process.env.CI || process.env.JEST_WORKER_ID || process.env.NODE_ENV === 'test';
+      if (this.config.preferMessageBox && process.platform === 'win32' && !isCI) {
         const titleText = title || 'Claude Code Auto-Resume';
         const messageText = message || '';
         this._log('debug', 'Using MessageBox as preferred notification method');
