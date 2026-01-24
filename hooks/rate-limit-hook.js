@@ -189,21 +189,33 @@ function isRateLimitMessage(message) {
  * @returns {Promise<Object|null>} - Rate limit info or null
  */
 async function analyzeTranscript(transcriptPath) {
-  if (!fs.existsSync(transcriptPath)) {
+  let fileStream;
+  try {
+    fileStream = fs.createReadStream(transcriptPath);
+  } catch (err) {
+    // Failed to open file (file doesn't exist, permission denied, etc.)
     return null;
   }
 
-  const fileStream = fs.createReadStream(transcriptPath);
-  const rl = readline.createInterface({
-    input: fileStream,
-    crlfDelay: Infinity
-  });
+  // For testing: check if stream has async iterator (mock streams)
+  // For production: use readline interface
+  let lineIterator;
+  if (fileStream[Symbol.asyncIterator]) {
+    // Mock stream with async iterator - iterate directly
+    lineIterator = fileStream;
+  } else {
+    // Real file stream - use readline
+    lineIterator = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity
+    });
+  }
 
   let rateLimitDetected = false;
   let rateLimitMessage = '';
   let sessionId = null;
 
-  for await (const line of rl) {
+  for await (const line of lineIterator) {
     if (!line.trim()) continue;
 
     try {
@@ -292,6 +304,79 @@ async function analyzeTranscript(transcriptPath) {
     session_id: sessionId,
     ...timeInfo
   };
+}
+
+/**
+ * Analyze transcript with subagent scanning
+ * First checks main transcript, then scans subagent transcripts if no rate limit found
+ * @param {string} transcriptPath - Path to the main transcript JSONL file
+ * @returns {Promise<Object|null>} - Rate limit info or null
+ */
+async function analyzeTranscriptWithSubagents(transcriptPath) {
+  // Check if main transcript exists
+  if (!fs.existsSync(transcriptPath)) {
+    return null;
+  }
+
+  // First analyze the main transcript
+  const mainResult = await analyzeTranscript(transcriptPath);
+
+  // If rate limit found in main transcript, return immediately
+  if (mainResult) {
+    return mainResult;
+  }
+
+  // Derive subagents directory from transcript path
+  // For /path/to/session-id.jsonl → /path/to/session-id/subagents/
+  const transcriptDir = path.dirname(transcriptPath);
+  const transcriptFile = path.basename(transcriptPath);
+  const sessionId = transcriptFile.replace(/\.jsonl$/, '');
+  const subagentsDir = path.join(transcriptDir, sessionId, 'subagents');
+
+  // Check if subagents directory exists
+  if (!fs.existsSync(subagentsDir)) {
+    return null;
+  }
+
+  // Read all files in subagents directory
+  let subagentFiles;
+  try {
+    subagentFiles = fs.readdirSync(subagentsDir);
+  } catch (err) {
+    // Error reading directory, return null
+    return null;
+  }
+
+  // Return early if no files found
+  if (!subagentFiles || subagentFiles.length === 0) {
+    return null;
+  }
+
+  // Filter to only agent-*.jsonl files
+  const agentFiles = subagentFiles.filter(file =>
+    file.startsWith('agent-') && file.endsWith('.jsonl')
+  );
+
+  // Scan each subagent file
+  for (const agentFile of agentFiles) {
+    const agentPath = path.join(subagentsDir, agentFile);
+
+    try {
+      const subagentResult = await analyzeTranscript(agentPath);
+
+      // Return first rate limit found
+      if (subagentResult) {
+        return subagentResult;
+      }
+    } catch (err) {
+      // Skip files that cause errors (permission denied, file read errors, etc.)
+      // Continue to next file
+      continue;
+    }
+  }
+
+  // No rate limit found in any transcript
+  return null;
 }
 
 /**
@@ -405,8 +490,8 @@ async function main() {
       return;
     }
 
-    // Analyze transcript for rate limits
-    const rateLimitInfo = await analyzeTranscript(transcriptPath);
+    // Analyze transcript for rate limits (including subagents)
+    const rateLimitInfo = await analyzeTranscriptWithSubagents(transcriptPath);
 
     if (!rateLimitInfo) {
       // No rate limit detected - exit silently
@@ -449,3 +534,12 @@ async function main() {
 
 // Execute main function
 main();
+
+// Export functions for testing
+module.exports = {
+  analyzeTranscript,
+  analyzeTranscriptWithSubagents,
+  isRateLimitMessage,
+  isFalsePositive,
+  parseResetTime
+};

@@ -1,6 +1,6 @@
 {
   "name": "auto-resume",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "Automatically resume Claude Code sessions when rate limits reset",
   "author": {
     "name": "Muminur",
