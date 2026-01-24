@@ -14,9 +14,18 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const HOME_DIR = os.homedir();
-const AUTO_RESUME_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
-const PID_FILE = path.join(AUTO_RESUME_DIR, 'daemon.pid');
+// Getter functions for paths to make testing easier
+function getHomeDir() {
+  return os.homedir();
+}
+
+function getAutoResumeDir() {
+  return path.join(getHomeDir(), '.claude', 'auto-resume');
+}
+
+function getPidFile() {
+  return path.join(getAutoResumeDir(), 'daemon.pid');
+}
 
 // Find daemon path - check plugin location first, then manual install location
 function findDaemonPath() {
@@ -29,13 +38,13 @@ function findDaemonPath() {
   }
 
   // Check manual install location
-  const manualDaemon = path.join(AUTO_RESUME_DIR, 'auto-resume-daemon.js');
+  const manualDaemon = path.join(getAutoResumeDir(), 'auto-resume-daemon.js');
   if (fs.existsSync(manualDaemon)) {
     return manualDaemon;
   }
 
   // Search in plugin cache
-  const pluginCache = path.join(HOME_DIR, '.claude', 'plugins', 'cache');
+  const pluginCache = path.join(getHomeDir(), '.claude', 'plugins', 'cache');
   if (fs.existsSync(pluginCache)) {
     try {
       const findDaemon = (dir) => {
@@ -63,12 +72,12 @@ function findDaemonPath() {
 
 // Check if daemon is running by checking PID file and process
 function isDaemonRunning() {
-  if (!fs.existsSync(PID_FILE)) {
+  if (!fs.existsSync(getPidFile())) {
     return false;
   }
 
   try {
-    const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8').trim(), 10);
+    const pid = parseInt(fs.readFileSync(getPidFile(), 'utf8').trim(), 10);
     if (isNaN(pid)) {
       return false;
     }
@@ -97,19 +106,20 @@ function isDaemonRunning() {
 
 // Start the daemon
 function startDaemon(daemonPath) {
+  const autoResumeDir = getAutoResumeDir();
   // Ensure auto-resume directory exists
-  if (!fs.existsSync(AUTO_RESUME_DIR)) {
-    fs.mkdirSync(AUTO_RESUME_DIR, { recursive: true });
+  if (!fs.existsSync(autoResumeDir)) {
+    fs.mkdirSync(autoResumeDir, { recursive: true });
   }
 
-  const logFile = path.join(AUTO_RESUME_DIR, 'daemon.log');
+  const logFile = path.join(autoResumeDir, 'daemon.log');
   const out = fs.openSync(logFile, 'a');
   const err = fs.openSync(logFile, 'a');
 
   const child = spawn('node', [daemonPath, 'start'], {
     detached: true,
     stdio: ['ignore', out, err],
-    cwd: AUTO_RESUME_DIR,
+    cwd: autoResumeDir,
     env: { ...process.env, DAEMON_AUTOSTART: 'true' }
   });
 
@@ -118,13 +128,28 @@ function startDaemon(daemonPath) {
   return child.pid;
 }
 
+/**
+ * Format hook output for Claude Code
+ * Uses hookSpecificOutput for proper integration
+ */
+function formatHookOutput(status, message, extra = {}) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'SessionStart',
+      additionalContext: message
+    },
+    status,
+    ...extra
+  };
+}
+
 // Main function
 function main() {
   try {
     // Check if already running
     if (isDaemonRunning()) {
       // Daemon is running, output success silently
-      console.log(JSON.stringify({ status: 'running', message: 'Auto-resume daemon is already running' }));
+      console.log(JSON.stringify(formatHookOutput('running', 'Auto-resume daemon is running')));
       process.exit(0);
       return;
     }
@@ -133,7 +158,7 @@ function main() {
     const daemonPath = findDaemonPath();
     if (!daemonPath) {
       // Daemon not found - this is okay, might not be fully installed
-      console.log(JSON.stringify({ status: 'not_found', message: 'Daemon not found' }));
+      console.log(JSON.stringify(formatHookOutput('not_found', 'Auto-resume daemon not installed')));
       process.exit(0);
       return;
     }
@@ -141,23 +166,30 @@ function main() {
     // Start the daemon
     const pid = startDaemon(daemonPath);
 
-    console.log(JSON.stringify({
-      status: 'started',
-      message: 'Auto-resume daemon started',
-      pid: pid,
-      daemonPath: daemonPath
-    }));
+    console.log(JSON.stringify(formatHookOutput('started', 'Auto-resume daemon started', {
+      pid,
+      daemonPath
+    })));
 
     process.exit(0);
 
   } catch (err) {
     // Don't fail the session start, just log the error
-    console.log(JSON.stringify({
-      status: 'error',
-      message: err.message
-    }));
+    console.log(JSON.stringify(formatHookOutput('error', `Auto-resume error: ${err.message}`)));
     process.exit(0);
   }
 }
 
-main();
+// Run main if called directly, but allow exporting for tests
+if (require.main === module) {
+  main();
+}
+
+// Export functions for testing
+module.exports = {
+  findDaemonPath,
+  isDaemonRunning,
+  startDaemon,
+  main,
+  formatHookOutput
+};
