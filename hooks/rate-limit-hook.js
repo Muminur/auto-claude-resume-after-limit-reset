@@ -24,7 +24,8 @@ const STATUS_FILE = path.join(STATUS_DIR, 'status.json');
 // Rate limit detection patterns - ULTRA SPECIFIC to avoid false positives
 // Must match the EXACT format of Claude Code's rate limit UI message
 // Pattern: "You've hit your limit · resets Xpm (Timezone)"
-const RATE_LIMIT_COMBINED_PATTERN = /You['']ve hit your (?:usage )?limit.*?resets\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\)/i;
+// Note: ['''] matches curly quotes and standard apostrophe
+const RATE_LIMIT_COMBINED_PATTERN = /You[''']ve hit your (?:usage )?limit.*?resets\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\)/i;
 
 // Secondary patterns for API errors (not from file contents)
 const API_ERROR_PATTERNS = [
@@ -213,18 +214,25 @@ async function analyzeTranscript(transcriptPath) {
         sessionId = entry.session_id || entry.sessionId;
       }
 
-      // CRITICAL: Convert entry to string ONCE for false positive check
-      const entryString = JSON.stringify(entry);
-
-      // Skip ENTIRE entry if it contains ANY tool-related content
-      // This is the most aggressive filter to prevent false positives
-      if (/tool_result|tool_use_id|toolu_/i.test(entryString)) {
-        continue;
-      }
-
-      // Skip entries that look like transcript metadata (contain parentUuid, etc.)
-      if (/parentUuid|isSidechain|userType.*external/i.test(entryString)) {
-        continue;
+      // PRIORITY CHECK: Assistant messages with error: "rate_limit" or isApiErrorMessage: true
+      // This is the primary way Claude Code reports rate limits in transcripts
+      // Check this BEFORE any skip filters to ensure we don't miss rate limits
+      if ((entry.error === 'rate_limit' || entry.isApiErrorMessage === true) &&
+          entry.type === 'assistant' &&
+          entry.message &&
+          entry.message.content &&
+          Array.isArray(entry.message.content)) {
+        for (const contentItem of entry.message.content) {
+          if (contentItem.type === 'text' &&
+              typeof contentItem.text === 'string' &&
+              contentItem.text.length < MAX_RATE_LIMIT_MESSAGE_LENGTH &&
+              isRateLimitMessage(contentItem.text)) {
+            rateLimitDetected = true;
+            rateLimitMessage = contentItem.text;
+            break;
+          }
+        }
+        if (rateLimitDetected) break;
       }
 
       // CRITICAL: Skip entries that are tool results (file contents, command outputs)
@@ -245,7 +253,7 @@ async function analyzeTranscript(transcriptPath) {
       // Only check specific SMALL fields that would contain actual rate limit messages
       const fieldsToCheck = [];
 
-      // Check error fields (must be short strings)
+      // Check error fields (must be short strings) - fallback for other formats
       if (typeof entry.error === 'string' && entry.error.length < MAX_RATE_LIMIT_MESSAGE_LENGTH) {
         fieldsToCheck.push(entry.error);
       }
