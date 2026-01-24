@@ -768,4 +768,157 @@ describe('WebSocketServer', () => {
       }, 10);
     });
   });
+
+  describe('message handler registration', () => {
+    it('should allow registering custom message handlers', () => {
+      server = new WebSocketServer({ port: 3847, logger: mockLogger, enableHeartbeat: false });
+      const handler = jest.fn();
+
+      server.registerHandler('custom', handler);
+
+      expect(server.messageHandlers.has('custom')).toBe(true);
+      expect(server.messageHandlers.get('custom')).toBe(handler);
+    });
+
+    it('should call registered handler for matching message type', (done) => {
+      server = new WebSocketServer({ port: 3847, logger: mockLogger, enableHeartbeat: false });
+      const handler = jest.fn();
+      server.registerHandler('status', handler);
+      server.start();
+
+      const ws = simulateConnection(server);
+
+      setTimeout(() => {
+        // Simulate receiving a 'status' message
+        ws.emit('message', JSON.stringify({ type: 'status' }));
+
+        setTimeout(() => {
+          expect(handler).toHaveBeenCalled();
+          done();
+        }, 10);
+      }, 10);
+    });
+
+    it('should pass ws, state, and message to handler', (done) => {
+      server = new WebSocketServer({ port: 3847, logger: mockLogger, enableHeartbeat: false });
+      let receivedArgs = null;
+      const handler = jest.fn((ws, state, message) => {
+        receivedArgs = { ws, state, message };
+      });
+      server.registerHandler('config', handler);
+      server.start();
+
+      const ws = simulateConnection(server);
+
+      setTimeout(() => {
+        const testMessage = { type: 'config', data: { key: 'value' } };
+        ws.emit('message', JSON.stringify(testMessage));
+
+        setTimeout(() => {
+          expect(receivedArgs).not.toBeNull();
+          expect(receivedArgs.ws).toBe(ws);
+          expect(receivedArgs.state).toBeDefined();
+          expect(receivedArgs.state.subscriptions).toBeDefined();
+          expect(receivedArgs.message).toEqual(testMessage);
+          done();
+        }, 10);
+      }, 10);
+    });
+
+    it('should not return error for handled message types', (done) => {
+      server = new WebSocketServer({ port: 3847, logger: mockLogger, enableHeartbeat: false });
+      const handler = jest.fn();
+      server.registerHandler('analytics', handler);
+      server.start();
+
+      const ws = simulateConnection(server);
+
+      setTimeout(() => {
+        ws.emit('message', JSON.stringify({ type: 'analytics' }));
+
+        setTimeout(() => {
+          // Should not have sent an error response
+          const lastSent = ws.lastSent;
+          if (lastSent) {
+            const parsed = JSON.parse(lastSent);
+            expect(parsed.type).not.toBe('error');
+          }
+          expect(handler).toHaveBeenCalled();
+          done();
+        }, 10);
+      }, 10);
+    });
+
+    it('should still return error for unhandled unknown types', (done) => {
+      server = new WebSocketServer({ port: 3847, logger: mockLogger, enableHeartbeat: false });
+      // Register a handler for 'status' but not 'unknown'
+      server.registerHandler('status', jest.fn());
+      server.start();
+
+      const ws = simulateConnection(server);
+
+      setTimeout(() => {
+        ws.emit('message', JSON.stringify({ type: 'totally_unknown_type' }));
+
+        setTimeout(() => {
+          const lastSent = ws.lastSent;
+          expect(lastSent).toBeDefined();
+          const parsed = JSON.parse(lastSent);
+          expect(parsed.type).toBe('error');
+          expect(parsed.data.message).toBe('Unknown message type');
+          done();
+        }, 10);
+      }, 10);
+    });
+
+    it('should expose send method for handlers to respond', (done) => {
+      server = new WebSocketServer({ port: 3847, logger: mockLogger, enableHeartbeat: false });
+      const handler = jest.fn((ws, state, message) => {
+        server.send(ws, { type: 'response', data: { success: true } });
+      });
+      server.registerHandler('request', handler);
+      server.start();
+
+      const ws = simulateConnection(server);
+
+      setTimeout(() => {
+        ws.emit('message', JSON.stringify({ type: 'request' }));
+
+        setTimeout(() => {
+          expect(handler).toHaveBeenCalled();
+          const lastSent = ws.lastSent;
+          expect(lastSent).toBeDefined();
+          const parsed = JSON.parse(lastSent);
+          expect(parsed.type).toBe('response');
+          expect(parsed.data.success).toBe(true);
+          done();
+        }, 10);
+      }, 10);
+    });
+
+    it('should handle errors thrown by handlers gracefully', (done) => {
+      server = new WebSocketServer({ port: 3847, logger: mockLogger, enableHeartbeat: false });
+      const handler = jest.fn(() => {
+        throw new Error('Handler crashed');
+      });
+      server.registerHandler('crash', handler);
+      server.start();
+
+      const ws = simulateConnection(server);
+
+      setTimeout(() => {
+        ws.emit('message', JSON.stringify({ type: 'crash' }));
+
+        setTimeout(() => {
+          expect(handler).toHaveBeenCalled();
+          // Should send an error response instead of crashing
+          const lastSent = ws.lastSent;
+          expect(lastSent).toBeDefined();
+          const parsed = JSON.parse(lastSent);
+          expect(parsed.type).toBe('error');
+          done();
+        }, 10);
+      }, 10);
+    });
+  });
 });

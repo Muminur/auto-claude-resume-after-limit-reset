@@ -97,6 +97,9 @@ class DashboardIntegration extends EventEmitter {
         );
       }
 
+      // Register WebSocket message handlers
+      this._registerMessageHandlers();
+
       // Start servers in order
       const startedServers = [];
 
@@ -267,6 +270,61 @@ class DashboardIntegration extends EventEmitter {
       default:
         return `xdg-open "${url}"`;
     }
+  }
+
+
+  /**
+   * Register message handlers with the WebSocket server
+   */
+  _registerMessageHandlers() {
+    if (!this.wsServer) return;
+
+    // Status request handler
+    this.wsServer.registerHandler('status', (ws, state, message) => {
+      const statuses = this.statusBridge ? this.statusBridge.getAllStatuses() : {};
+      const sessions = Object.entries(statuses).map(([id, status]) => ({
+        id,
+        ...status
+      }));
+
+      this.wsServer.send(ws, {
+        type: 'status',
+        sessions: sessions,
+        stats: this._getDaemonStats()
+      });
+    });
+
+    // Config request handler
+    this.wsServer.registerHandler('config', (ws, state, message) => {
+      const config = this.configManager.getConfig();
+      this.wsServer.send(ws, {
+        type: 'config',
+        config: config
+      });
+    });
+
+    // Analytics request handler
+    this.wsServer.registerHandler('analytics', (ws, state, message) => {
+      const analytics = this.statusBridge ? this.statusBridge.getAnalytics() : {};
+      this.wsServer.send(ws, {
+        type: 'analytics',
+        data: analytics.chartData || []
+      });
+    });
+
+    this._log('debug', 'Registered WebSocket message handlers');
+  }
+
+  /**
+   * Get daemon statistics for the status response
+   */
+  _getDaemonStats() {
+    return {
+      uptime: process.uptime(),
+      total_resumes: 0, // TODO: Track this
+      success_rate: 1.0,
+      peak_hour: '--'
+    };
   }
 
   /**

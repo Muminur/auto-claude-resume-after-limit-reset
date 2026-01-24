@@ -55,6 +55,7 @@ class WebSocketServer extends EventEmitter {
     this.isRunning = false;
     this.pingIntervalId = null;
     this.logger = config.logger || console;
+    this.messageHandlers = new Map(); // Custom message handlers
   }
 
   /**
@@ -317,11 +318,22 @@ class WebSocketServer extends EventEmitter {
           break;
 
         default:
-          this._log('warning', `Unknown message type: ${message.type}`);
-          this._send(ws, {
-            type: 'error',
-            data: { message: 'Unknown message type' }
-          });
+          // Check for registered custom handlers
+          if (this.messageHandlers.has(message.type)) {
+            const handler = this.messageHandlers.get(message.type);
+            try {
+              handler(ws, state, message);
+            } catch (err) {
+              this._log('error', `Handler error for ${message.type}: ${err.message}`);
+              this._send(ws, { type: 'error', data: { message: 'Handler error' } });
+            }
+          } else {
+            this._log('warning', `Unknown message type: ${message.type}`);
+            this._send(ws, {
+              type: 'error',
+              data: { message: 'Unknown message type' }
+            });
+          }
       }
     } catch (error) {
       this._log('error', `Error handling message: ${error.message}`);
@@ -542,6 +554,26 @@ class WebSocketServer extends EventEmitter {
         this._log('error', `Error sending message: ${error.message}`);
       }
     }
+  }
+
+
+  /**
+   * Register a custom message handler for a message type
+   * @param {string} messageType - The message type to handle
+   * @param {function} handler - Function(ws, state, message) to handle messages
+   */
+  registerHandler(messageType, handler) {
+    this.messageHandlers.set(messageType, handler);
+    this._log('debug', `Registered handler for message type: ${messageType}`);
+  }
+
+  /**
+   * Public method to send a message to a client (for use by handlers)
+   * @param {WebSocket} ws - The WebSocket client
+   * @param {object} message - The message to send
+   */
+  send(ws, message) {
+    this._send(ws, message);
   }
 
   /**

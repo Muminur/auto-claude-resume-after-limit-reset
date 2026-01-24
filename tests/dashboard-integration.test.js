@@ -58,6 +58,7 @@ jest.mock('../src/modules/websocket-server', () => {
     mockWsServer = new (require('events').EventEmitter)();
     mockWsServer.config = config || { port: 3847 };
     mockWsServer.isRunning = false;
+    mockWsServer.messageHandlers = new Map();
     mockWsServer.start = jest.fn().mockImplementation(() => {
       if (mockWsServerShouldFail) {
         return Promise.reject(mockWsServerError);
@@ -78,6 +79,10 @@ jest.mock('../src/modules/websocket-server', () => {
       port: mockWsServer.config.port,
       clients: 0
     });
+    mockWsServer.registerHandler = jest.fn((type, handler) => {
+      mockWsServer.messageHandlers.set(type, handler);
+    });
+    mockWsServer.send = jest.fn();
     return mockWsServer;
   });
 });
@@ -439,6 +444,123 @@ describe('DashboardIntegration', () => {
 
       // HTTP should be stopped since WS failed
       expect(mockHttpServer.stop).toHaveBeenCalled();
+    });
+  });
+
+  describe('WebSocket Message Handling', () => {
+    beforeEach(() => {
+      dashboard = new DashboardIntegration({
+        configManager: mockConfigManager,
+        logger: mockLogger
+      });
+    });
+
+    it('should register handlers when WebSocket server starts', async () => {
+      await dashboard.startServers();
+
+      expect(mockWsServer.registerHandler).toHaveBeenCalled();
+      // Should register at least status, config, and analytics handlers
+      const registeredTypes = mockWsServer.registerHandler.mock.calls.map(call => call[0]);
+      expect(registeredTypes).toContain('status');
+      expect(registeredTypes).toContain('config');
+      expect(registeredTypes).toContain('analytics');
+    });
+
+    it('should respond to status request with session data', async () => {
+      await dashboard.startServers();
+
+      // Get the status handler that was registered
+      const statusHandler = mockWsServer.messageHandlers.get('status');
+      expect(statusHandler).toBeDefined();
+
+      // Mock ws and state
+      const mockWs = {};
+      const mockState = { subscriptions: ['*'] };
+
+      // Call the handler
+      statusHandler(mockWs, mockState, { type: 'status' });
+
+      // Verify it sends a response
+      expect(mockWsServer.send).toHaveBeenCalledWith(
+        mockWs,
+        expect.objectContaining({
+          type: 'status',
+          sessions: expect.any(Array)
+        })
+      );
+    });
+
+    it('should respond to config request with configuration', async () => {
+      await dashboard.startServers();
+
+      const configHandler = mockWsServer.messageHandlers.get('config');
+      expect(configHandler).toBeDefined();
+
+      const mockWs = {};
+      const mockState = { subscriptions: ['*'] };
+
+      configHandler(mockWs, mockState, { type: 'config' });
+
+      expect(mockWsServer.send).toHaveBeenCalledWith(
+        mockWs,
+        expect.objectContaining({
+          type: 'config',
+          config: expect.any(Object)
+        })
+      );
+    });
+
+    it('should respond to analytics request with chart data', async () => {
+      await dashboard.startServers();
+
+      const analyticsHandler = mockWsServer.messageHandlers.get('analytics');
+      expect(analyticsHandler).toBeDefined();
+
+      const mockWs = {};
+      const mockState = { subscriptions: ['*'] };
+
+      analyticsHandler(mockWs, mockState, { type: 'analytics' });
+
+      expect(mockWsServer.send).toHaveBeenCalledWith(
+        mockWs,
+        expect.objectContaining({
+          type: 'analytics',
+          data: expect.any(Array)
+        })
+      );
+    });
+
+    it('should include daemon stats in status response', async () => {
+      await dashboard.startServers();
+
+      const statusHandler = mockWsServer.messageHandlers.get('status');
+      const mockWs = {};
+
+      statusHandler(mockWs, {}, { type: 'status' });
+
+      expect(mockWsServer.send).toHaveBeenCalledWith(
+        mockWs,
+        expect.objectContaining({
+          type: 'status',
+          stats: expect.objectContaining({
+            uptime: expect.any(Number)
+          })
+        })
+      );
+    });
+
+    it('should not register handlers when WebSocket server disabled', async () => {
+      mockConfigManager.get.mockImplementation((key) => {
+        if (key === 'websocket.enabled') return false;
+        if (key === 'gui.enabled') return true;
+        if (key === 'api.enabled') return false;
+        return true;
+      });
+
+      await dashboard.startServers();
+
+      // registerHandler should not be called since WS is disabled
+      expect(mockWsServer.registerHandler).not.toHaveBeenCalled();
     });
   });
 });
