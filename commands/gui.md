@@ -10,37 +10,50 @@ Opens the web-based status monitoring dashboard to view real-time daemon status,
 
 ### Execute
 
-**Option 1: Open local HTML file (No server required):**
+**Recommended: Use the daemon's GUI command:**
 
 ```bash
-# macOS
-open ~/.claude/auto-resume/dashboard.html
-
-# Linux
-xdg-open ~/.claude/auto-resume/dashboard.html
-
-# Windows (Git Bash)
-start ~/.claude/auto-resume/dashboard.html
+# Find and run the daemon with GUI flag
+node "$(find ~/.claude/plugins/cache -path "*/auto-resume/*/auto-resume-daemon.js" 2>/dev/null | sort -V | tail -1)" gui
 ```
 
-**Option 2: Start HTTP server (for live updates):**
+**Platform-specific commands:**
 
 ```bash
-DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" --gui
+# Windows (PowerShell)
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" gui
+
+# Windows (CMD)
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" gui
+
+# macOS/Linux
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js gui
 ```
 
-This starts a local web server on http://localhost:3737 with WebSocket support for live status updates.
+This opens http://localhost:3737 in your default browser with the full dashboard GUI.
 
 ### Dashboard Features
 
 - Real-time daemon status
-- Rate limit information and countdown
+- Rate limit information and countdown timer
 - Analytics and statistics
 - Session history
 - Configuration overview
+- WebSocket support for live updates
 
-### Dashboard Location
+### How It Works
 
-- **Linux/macOS:** `~/.claude/auto-resume/dashboard.html`
-- **Windows:** `%USERPROFILE%\.claude\auto-resume\dashboard.html`
-- **HTTP Server:** `http://localhost:3737` (when using --gui flag)
+The dashboard is served by the daemon's built-in HTTP server (port 3737) from the `gui/` directory within the plugin. The `gui` command:
+1. Starts the HTTP server if not running
+2. Opens your default browser to http://localhost:3737
+
+### Troubleshooting
+
+If the browser doesn't open automatically, manually navigate to:
+- **URL:** http://localhost:3737
+
+Or open the HTML file directly:
+- **Windows:** `%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\gui\index.html`
+- **macOS/Linux:** `~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/gui/index.html`
+
+Note: Opening the HTML file directly won't have WebSocket live updates.
