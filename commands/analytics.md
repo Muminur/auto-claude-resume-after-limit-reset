@@ -13,12 +13,7 @@ Shows rate limit statistics, usage patterns, and predictions based on historical
 Run this command to view analytics:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" --analytics
-```
-
-**Windows PowerShell:**
-```powershell
-node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" --analytics
+DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" --analytics
 ```
 
 ### Analytics Output

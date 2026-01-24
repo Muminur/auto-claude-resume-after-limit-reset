@@ -13,12 +13,7 @@ Manually start the auto-resume daemon. Note: The daemon auto-starts when you ope
 Run this command to start the daemon:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" start
-```
-
-**Windows PowerShell:**
-```powershell
-node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" start
+DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" start
 ```
 
 ### Expected Output

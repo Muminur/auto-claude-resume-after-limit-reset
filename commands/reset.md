@@ -13,12 +13,7 @@ Clear any stale rate limit status so the daemon can detect fresh rate limits.
 Run this command to reset the status:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" --reset
-```
-
-**Windows PowerShell:**
-```powershell
-node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" --reset
+DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" --reset
 ```
 
 ### When to Use

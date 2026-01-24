@@ -13,12 +13,7 @@ Sends a test notification to verify that desktop notifications are configured co
 Run this command to send a test notification:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/auto-resume-daemon.js" --notify-test
-```
-
-**Windows PowerShell:**
-```powershell
-node "$env:CLAUDE_PLUGIN_ROOT\auto-resume-daemon.js" --notify-test
+DAEMON_PATH=$(find ~/.claude/plugins/cache -name "auto-resume-daemon.js" 2>/dev/null | head -1) && node "$DAEMON_PATH" --notify-test
 ```
 
 ### Expected Behavior
@@ -47,10 +42,10 @@ You should see a desktop notification with:
    tail -20 ~/.claude/auto-resume/daemon.log
    ```
 
-**Windows PowerShell:**
-```powershell
-Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 20
-```
+   On Windows (if tail is unavailable):
+   ```bash
+   cat ~/.claude/auto-resume/daemon.log | head -20
+   ```
 
 ### Notification Events
 
