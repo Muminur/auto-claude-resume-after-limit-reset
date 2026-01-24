@@ -28,7 +28,7 @@ class AutoResumeDashboard {
     connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.hostname || 'localhost';
-        const port = 8765; // Default WebSocket port
+        const port = new URLSearchParams(window.location.search).get('wsPort') || 3847;
 
         try {
             this.ws = new WebSocket(`${protocol}//${host}:${port}`);

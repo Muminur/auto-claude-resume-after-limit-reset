@@ -45,6 +45,13 @@ try {
   // Module not available, will show error when command is used
 }
 
+let DashboardIntegration = null;
+try {
+  DashboardIntegration = require('./src/modules/dashboard-integration');
+} catch (err) {
+  // Module not available, will show error when command is used
+}
+
 const VERSION = '1.0.0';
 const HOME_DIR = os.homedir();
 const BASE_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
@@ -71,6 +78,7 @@ let countdownInterval = null;
 let currentResetTime = null;
 let lastStatusMtime = null;
 let isBackgroundMode = false;  // Track if running detached (no stdout)
+let dashboard = null;  // Dashboard integration instance
 
 /**
  * Safe stdout write - handles EPIPE errors when running detached
@@ -632,16 +640,67 @@ function startDaemon() {
   log('info', `Log file: ${LOG_FILE}`);
   log('info', `PID file: ${PID_FILE}`);
 
+  // Start dashboard servers if available
+  if (DashboardIntegration) {
+    startDashboard();
+  }
+
   // Start watching
   isRunning = true;
   watchStatusFile();
 }
 
 /**
+ * Start dashboard servers
+ */
+async function startDashboard() {
+  try {
+    // Create a simple config provider for the dashboard
+    const dashboardConfig = {
+      get: (key) => {
+        const defaults = {
+          'gui.enabled': true,
+          'gui.port': 3737,
+          'websocket.enabled': true,
+          'websocket.port': 3847,
+          'api.enabled': true,
+          'api.port': 3848
+        };
+        return defaults[key];
+      },
+      getConfig: () => ({
+        gui: { enabled: true, port: 3737 },
+        websocket: { enabled: true, port: 3847 },
+        api: { enabled: true, port: 3848 }
+      })
+    };
+
+    dashboard = new DashboardIntegration({
+      configManager: dashboardConfig,
+      logger: {
+        debug: (msg) => log('debug', msg),
+        info: (msg) => log('info', msg),
+        warn: (msg) => log('warning', msg),
+        error: (msg) => log('error', msg)
+      }
+    });
+
+    await dashboard.startServers();
+    log('success', 'Dashboard servers started');
+    log('info', '  GUI: http://localhost:3737');
+    log('info', '  WebSocket: ws://localhost:3847');
+    log('info', '  API: http://localhost:3848');
+  } catch (error) {
+    log('error', `Failed to start dashboard: ${error.message}`);
+    // Continue daemon operation even if dashboard fails
+  }
+}
+
+/**
  * Setup signal handlers for graceful shutdown
  */
 function setupSignalHandlers() {
-  const shutdown = (signal) => {
+  const shutdown = async (signal) => {
     console.log('');
     log('info', `Received ${signal}, shutting down gracefully...`);
 
@@ -653,6 +712,16 @@ function setupSignalHandlers() {
 
     // Stop countdown
     stopCountdown();
+
+    // Stop dashboard servers
+    if (dashboard) {
+      try {
+        await dashboard.stopServers();
+        log('info', 'Dashboard servers stopped');
+      } catch (error) {
+        log('error', `Error stopping dashboard: ${error.message}`);
+      }
+    }
 
     // Remove PID file
     removePidFile();
@@ -874,7 +943,52 @@ async function testNotification() {
 /**
  * Open GUI dashboard
  */
-function openGui() {
+async function openGui() {
+  // If dashboard integration is available, use it
+  if (DashboardIntegration) {
+    // Create dashboard if it doesn't exist
+    if (!dashboard) {
+      const dashboardConfig = {
+        get: (key) => {
+          const defaults = {
+            'gui.enabled': true,
+            'gui.port': 3737,
+            'websocket.enabled': true,
+            'websocket.port': 3847,
+            'api.enabled': true,
+            'api.port': 3848
+          };
+          return defaults[key];
+        },
+        getConfig: () => ({
+          gui: { enabled: true, port: 3737 },
+          websocket: { enabled: true, port: 3847 },
+          api: { enabled: true, port: 3848 }
+        })
+      };
+
+      dashboard = new DashboardIntegration({
+        configManager: dashboardConfig,
+        logger: {
+          debug: (msg) => log('debug', msg),
+          info: (msg) => log('info', msg),
+          warn: (msg) => log('warning', msg),
+          error: (msg) => log('error', msg)
+        }
+      });
+    }
+
+    try {
+      await dashboard.openGui();
+      log('success', 'GUI dashboard opened at http://localhost:3737');
+      return true;
+    } catch (error) {
+      log('error', `Failed to open GUI via dashboard: ${error.message}`);
+      // Fall through to legacy file-based approach
+    }
+  }
+
+  // Legacy fallback: open file directly
   const guiPath = path.join(__dirname, 'gui', 'index.html');
 
   if (!fs.existsSync(guiPath)) {
@@ -1062,9 +1176,13 @@ function main() {
 
     case '--gui':
     case 'gui':
-      openGui();
-      // Give a moment for the command to execute before exiting
-      setTimeout(() => process.exit(0), 500);
+      openGui().then(() => {
+        // Give a moment for the browser to launch before exiting
+        setTimeout(() => process.exit(0), 500);
+      }).catch((err) => {
+        log('error', `Failed to open GUI: ${err.message}`);
+        process.exit(1);
+      });
       break;
 
     default:
