@@ -312,7 +312,127 @@ class DashboardIntegration extends EventEmitter {
       });
     });
 
+    // Resume session handler
+    this.wsServer.registerHandler('resume', (ws, state, message) => {
+      const sessionId = message.session_id || 'default';
+      this._log('info', `Resume requested for session: ${sessionId}`);
+
+      // Emit event for daemon to handle
+      this.emit('action:resume', { sessionId });
+
+      // Send acknowledgment
+      this.wsServer.send(ws, {
+        type: 'action_response',
+        action: 'resume',
+        success: true,
+        message: `Resume triggered for session ${sessionId}`
+      });
+    });
+
+    // Clear session handler
+    this.wsServer.registerHandler('clear', (ws, state, message) => {
+      const sessionId = message.session_id || 'default';
+      this._log('info', `Clear requested for session: ${sessionId}`);
+
+      // Emit event for daemon to handle
+      this.emit('action:clear', { sessionId });
+
+      // Send acknowledgment
+      this.wsServer.send(ws, {
+        type: 'action_response',
+        action: 'clear',
+        success: true,
+        message: `Status cleared for session ${sessionId}`
+      });
+    });
+
+    // Reset status handler
+    this.wsServer.registerHandler('reset_status', (ws, state, message) => {
+      this._log('info', 'Reset status requested');
+
+      // Emit event for daemon to handle
+      this.emit('action:reset_status');
+
+      // Send acknowledgment
+      this.wsServer.send(ws, {
+        type: 'action_response',
+        action: 'reset_status',
+        success: true,
+        message: 'Status reset triggered'
+      });
+    });
+
+    // Config update handler
+    this.wsServer.registerHandler('config_update', (ws, state, message) => {
+      const config = message.config || {};
+      this._log('info', 'Config update requested');
+
+      // Emit event for daemon to handle
+      this.emit('action:config_update', { config });
+
+      // Send acknowledgment
+      this.wsServer.send(ws, {
+        type: 'action_response',
+        action: 'config_update',
+        success: true,
+        message: 'Configuration updated'
+      });
+    });
+
+    // Get logs handler
+    this.wsServer.registerHandler('get_logs', (ws, state, message) => {
+      this._log('debug', 'Logs requested');
+
+      // Return recent logs from memory (or file)
+      const logs = this._getRecentLogs();
+
+      this.wsServer.send(ws, {
+        type: 'logs',
+        logs: logs
+      });
+    });
+
     this._log('debug', 'Registered WebSocket message handlers');
+  }
+
+  /**
+   * Update daemon status in the StatusBridge
+   * Called by the daemon when rate limit status changes
+   * @param {Object} status - Current daemon status
+   * @param {boolean} status.detected - Whether rate limit is detected
+   * @param {string} [status.reset_time] - ISO timestamp for rate limit reset
+   * @param {string} [status.message] - Status message
+   */
+  updateDaemonStatus(status) {
+    if (!this.statusBridge) {
+      this._log('warning', 'StatusBridge not initialized');
+      return;
+    }
+
+    // Update StatusBridge state
+    this.statusBridge.daemonState.isRateLimited = status.detected || false;
+    this.statusBridge.daemonState.currentStatus = status.detected ? {
+      detected: status.detected,
+      reset_time: status.reset_time,
+      message: status.message || 'Rate limit detected'
+    } : null;
+
+    // Broadcast status update to all WebSocket clients
+    if (this.wsServer && status.detected) {
+      this.wsServer.broadcastStatus({
+        detected: status.detected,
+        reset_time: status.reset_time,
+        message: status.message
+      });
+    } else if (this.wsServer) {
+      // Broadcast cleared status
+      this.wsServer.broadcastStatus({
+        detected: false,
+        message: 'No rate limit'
+      });
+    }
+
+    this._log('debug', `Daemon status updated: detected=${status.detected}`);
   }
 
   /**
@@ -321,10 +441,41 @@ class DashboardIntegration extends EventEmitter {
   _getDaemonStats() {
     return {
       uptime: process.uptime(),
-      total_resumes: 0, // TODO: Track this
-      success_rate: 1.0,
-      peak_hour: '--'
+      total_resumes: this._totalResumes || 0,
+      success_rate: this._successRate || 1.0,
+      peak_hour: this._peakHour || '--'
     };
+  }
+
+  /**
+   * Get recent logs for the GUI
+   * @returns {Array} Array of recent log entries
+   */
+  _getRecentLogs() {
+    // Return logs from memory buffer or empty array
+    return this._logBuffer || [];
+  }
+
+  /**
+   * Add a log entry to the buffer (for GUI display)
+   * @param {string} level - Log level
+   * @param {string} message - Log message
+   */
+  addLogEntry(level, message) {
+    if (!this._logBuffer) {
+      this._logBuffer = [];
+    }
+
+    this._logBuffer.push({
+      timestamp: new Date().toISOString(),
+      level,
+      message
+    });
+
+    // Keep only last 100 entries
+    if (this._logBuffer.length > 100) {
+      this._logBuffer.shift();
+    }
   }
 
   /**

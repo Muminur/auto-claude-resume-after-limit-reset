@@ -590,11 +590,29 @@ function watchStatusFile() {
           log('info', `Message: ${status.message || 'N/A'}`);
           log('debug', `Timezone: ${status.timezone || 'N/A'}`);
 
+          // Update dashboard with rate limit status
+          if (dashboard) {
+            dashboard.updateDaemonStatus({
+              detected: true,
+              reset_time: status.reset_time,
+              message: status.message || 'Rate limit detected'
+            });
+          }
+
           startCountdown(resetTime);
         }
       } else if (!status.detected && currentResetTime) {
         // Rate limit cleared manually
         log('info', 'Rate limit cleared, stopping countdown');
+
+        // Update dashboard with cleared status
+        if (dashboard) {
+          dashboard.updateDaemonStatus({
+            detected: false,
+            message: 'Rate limit cleared'
+          });
+        }
+
         stopCountdown();
       }
     } catch (err) {
@@ -686,6 +704,29 @@ async function startDashboard() {
     });
 
     await dashboard.startServers();
+
+    // Listen for action events from GUI
+    dashboard.on('action:resume', (data) => {
+      log('info', `Resume requested from GUI for session: ${data.sessionId}`);
+      triggerResume();
+    });
+
+    dashboard.on('action:clear', (data) => {
+      log('info', `Clear requested from GUI for session: ${data.sessionId}`);
+      resetStatus();
+    });
+
+    dashboard.on('action:reset_status', () => {
+      log('info', 'Reset status requested from GUI');
+      resetStatus();
+    });
+
+    dashboard.on('action:config_update', (data) => {
+      log('info', 'Config update received from GUI');
+      // Config is stored in localStorage on client side
+      // Could save to daemon config file here if needed
+    });
+
     log('success', 'Dashboard servers started');
     log('info', '  GUI: http://localhost:3737');
     log('info', '  WebSocket: ws://localhost:3847');

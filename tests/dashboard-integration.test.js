@@ -111,7 +111,20 @@ jest.mock('../src/modules/api-server', () => {
 jest.mock('../src/modules/status-bridge', () => {
   return jest.fn().mockImplementation((config) => {
     const bridge = new (require('events').EventEmitter)();
-    bridge.getAllStatuses = jest.fn().mockReturnValue({});
+    bridge.daemonState = {
+      currentStatus: null,
+      resetTime: null,
+      isRateLimited: false,
+      sessions: new Map(),
+      analytics: null
+    };
+    bridge.getAllStatuses = jest.fn().mockImplementation(() => {
+      const statuses = {};
+      if (bridge.daemonState.isRateLimited && bridge.daemonState.currentStatus) {
+        statuses.default = bridge.daemonState.currentStatus;
+      }
+      return statuses;
+    });
     bridge.getStatus = jest.fn().mockReturnValue(null);
     bridge.notifyStatusChange = jest.fn();
     bridge.getAnalytics = jest.fn().mockReturnValue({});
@@ -561,6 +574,192 @@ describe('DashboardIntegration', () => {
 
       // registerHandler should not be called since WS is disabled
       expect(mockWsServer.registerHandler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateDaemonStatus()', () => {
+    beforeEach(async () => {
+      dashboard = new DashboardIntegration({
+        configManager: mockConfigManager,
+        logger: mockLogger
+      });
+      await dashboard.startServers();
+    });
+
+    it('should update StatusBridge with daemon status', () => {
+      const status = {
+        detected: true,
+        reset_time: '2026-01-25T20:00:00Z',
+        message: 'Rate limit hit'
+      };
+
+      dashboard.updateDaemonStatus(status);
+
+      // Verify StatusBridge was updated
+      expect(dashboard.statusBridge.daemonState.isRateLimited).toBe(true);
+      expect(dashboard.statusBridge.daemonState.currentStatus).toEqual(
+        expect.objectContaining({
+          detected: true,
+          reset_time: '2026-01-25T20:00:00Z'
+        })
+      );
+    });
+
+    it('should broadcast status update to WebSocket clients', () => {
+      const status = {
+        detected: true,
+        reset_time: '2026-01-25T20:00:00Z',
+        message: 'Rate limit hit'
+      };
+
+      dashboard.updateDaemonStatus(status);
+
+      expect(mockWsServer.broadcastStatus).toHaveBeenCalled();
+    });
+
+    it('should clear status when detected is false', () => {
+      // First set a rate limit
+      dashboard.updateDaemonStatus({
+        detected: true,
+        reset_time: '2026-01-25T20:00:00Z'
+      });
+
+      // Then clear it
+      dashboard.updateDaemonStatus({
+        detected: false
+      });
+
+      expect(dashboard.statusBridge.daemonState.isRateLimited).toBe(false);
+    });
+
+    it('should return sessions in status response after update', () => {
+      dashboard.updateDaemonStatus({
+        detected: true,
+        reset_time: '2026-01-25T20:00:00Z',
+        message: 'Rate limit hit'
+      });
+
+      const statusHandler = mockWsServer.messageHandlers.get('status');
+      const mockWs = {};
+      statusHandler(mockWs, {}, { type: 'status' });
+
+      expect(mockWsServer.send).toHaveBeenCalledWith(
+        mockWs,
+        expect.objectContaining({
+          type: 'status',
+          sessions: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'default',
+              detected: true
+            })
+          ])
+        })
+      );
+    });
+  });
+
+  describe('Action Handlers', () => {
+    beforeEach(async () => {
+      dashboard = new DashboardIntegration({
+        configManager: mockConfigManager,
+        logger: mockLogger
+      });
+      await dashboard.startServers();
+    });
+
+    it('should register resume handler', async () => {
+      const registeredTypes = mockWsServer.registerHandler.mock.calls.map(call => call[0]);
+      expect(registeredTypes).toContain('resume');
+    });
+
+    it('should emit action:resume when resume message received', (done) => {
+      dashboard.on('action:resume', (data) => {
+        expect(data.sessionId).toBe('test-session');
+        done();
+      });
+
+      const resumeHandler = mockWsServer.messageHandlers.get('resume');
+      resumeHandler({}, {}, { type: 'resume', session_id: 'test-session' });
+    });
+
+    it('should register clear handler', async () => {
+      const registeredTypes = mockWsServer.registerHandler.mock.calls.map(call => call[0]);
+      expect(registeredTypes).toContain('clear');
+    });
+
+    it('should emit action:clear when clear message received', (done) => {
+      dashboard.on('action:clear', (data) => {
+        expect(data.sessionId).toBe('test-session');
+        done();
+      });
+
+      const clearHandler = mockWsServer.messageHandlers.get('clear');
+      clearHandler({}, {}, { type: 'clear', session_id: 'test-session' });
+    });
+
+    it('should register reset_status handler', async () => {
+      const registeredTypes = mockWsServer.registerHandler.mock.calls.map(call => call[0]);
+      expect(registeredTypes).toContain('reset_status');
+    });
+
+    it('should emit action:reset_status when reset_status message received', (done) => {
+      dashboard.on('action:reset_status', () => {
+        done();
+      });
+
+      const resetHandler = mockWsServer.messageHandlers.get('reset_status');
+      resetHandler({}, {}, { type: 'reset_status' });
+    });
+
+    it('should register config_update handler', async () => {
+      const registeredTypes = mockWsServer.registerHandler.mock.calls.map(call => call[0]);
+      expect(registeredTypes).toContain('config_update');
+    });
+
+    it('should emit action:config_update when config_update message received', (done) => {
+      const testConfig = { checkInterval: 30, autoResume: true };
+
+      dashboard.on('action:config_update', (data) => {
+        expect(data.config).toEqual(testConfig);
+        done();
+      });
+
+      const configHandler = mockWsServer.messageHandlers.get('config_update');
+      configHandler({}, {}, { type: 'config_update', config: testConfig });
+    });
+
+    it('should register get_logs handler', async () => {
+      const registeredTypes = mockWsServer.registerHandler.mock.calls.map(call => call[0]);
+      expect(registeredTypes).toContain('get_logs');
+    });
+
+    it('should respond with logs when get_logs message received', () => {
+      const mockWs = {};
+      const logsHandler = mockWsServer.messageHandlers.get('get_logs');
+      logsHandler(mockWs, {}, { type: 'get_logs' });
+
+      expect(mockWsServer.send).toHaveBeenCalledWith(
+        mockWs,
+        expect.objectContaining({
+          type: 'logs',
+          logs: expect.any(Array)
+        })
+      );
+    });
+
+    it('should send success response for resume action', () => {
+      const mockWs = {};
+      const resumeHandler = mockWsServer.messageHandlers.get('resume');
+      resumeHandler(mockWs, {}, { type: 'resume', session_id: 'test' });
+
+      expect(mockWsServer.send).toHaveBeenCalledWith(
+        mockWs,
+        expect.objectContaining({
+          type: 'action_response',
+          action: 'resume',
+          success: true
+        })
+      );
     });
   });
 });
