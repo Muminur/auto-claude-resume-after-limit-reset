@@ -132,6 +132,49 @@ function Backup-File {
     }
 }
 
+function Install-Dependencies {
+    Write-Info "Installing npm dependencies..."
+
+    if (-not (Test-Path $PACKAGE_JSON_DEST)) {
+        Write-Warning "package.json not found, skipping npm install"
+        return
+    }
+
+    # Check if npm is available
+    try {
+        $npmVersion = npm --version 2>$null
+        if (-not $npmVersion) {
+            Write-Warning "npm not found, dependencies not installed"
+            Write-Warning "Please run 'npm install' manually in: $AUTO_RESUME_DIR"
+            return
+        }
+    } catch {
+        Write-Warning "npm not found, dependencies not installed"
+        Write-Warning "Please run 'npm install' manually in: $AUTO_RESUME_DIR"
+        return
+    }
+
+    # Run npm install in the auto-resume directory
+    $currentDir = Get-Location
+    try {
+        Set-Location $AUTO_RESUME_DIR
+        Write-Info "Running npm install in $AUTO_RESUME_DIR..."
+
+        $npmOutput = npm install --production 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Dependencies installed successfully"
+        } else {
+            Write-Warning "npm install completed with warnings"
+            Write-Host $npmOutput
+        }
+    } catch {
+        Write-Warning "Failed to install dependencies: $_"
+        Write-Warning "Please run 'npm install' manually in: $AUTO_RESUME_DIR"
+    } finally {
+        Set-Location $currentDir
+    }
+}
+
 function Merge-Settings {
     param(
         [string]$SettingsPath
@@ -342,6 +385,11 @@ function Install-Plugin {
         Copy-Item -Path $PACKAGE_JSON_SOURCE -Destination $PACKAGE_JSON_DEST -Force
         Write-Success "Installed: $PACKAGE_JSON_DEST"
     }
+
+    Write-Host ""
+
+    # Step 3.5: Install npm dependencies
+    Install-Dependencies
 
     Write-Host ""
 
