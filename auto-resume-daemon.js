@@ -22,6 +22,29 @@ const path = require('path');
 const os = require('os');
 const { exec } = require('child_process');
 
+// Load modules with graceful fallback
+let configManager = null;
+let AnalyticsCollector = null;
+let NotificationManager = null;
+
+try {
+  configManager = require('./src/modules/config-manager');
+} catch (err) {
+  // Module not available, will show error when command is used
+}
+
+try {
+  AnalyticsCollector = require('./src/modules/analytics-collector');
+} catch (err) {
+  // Module not available, will show error when command is used
+}
+
+try {
+  NotificationManager = require('./src/modules/notification-manager');
+} catch (err) {
+  // Module not available, will show error when command is used
+}
+
 const VERSION = '1.0.0';
 const HOME_DIR = os.homedir();
 const BASE_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
@@ -718,6 +741,173 @@ async function runTest(seconds) {
 }
 
 /**
+ * Show current configuration
+ */
+function showConfig() {
+  if (!configManager) {
+    log('error', 'config-manager module not available');
+    return false;
+  }
+
+  try {
+    const config = configManager.getConfig();
+    console.log(`${colors.cyan}Current Configuration:${colors.reset}`);
+    console.log(JSON.stringify(config, null, 2));
+    console.log(`\n${colors.blue}Config file:${colors.reset} ${configManager.getConfigPath()}`);
+    return true;
+  } catch (err) {
+    log('error', `Failed to load config: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * Set a configuration value
+ * @param {string} key - Configuration key (supports dot notation)
+ * @param {string} value - Value to set
+ */
+function setConfigValue(key, value) {
+  if (!configManager) {
+    log('error', 'config-manager module not available');
+    return false;
+  }
+
+  if (!key) {
+    log('error', 'Usage: node auto-resume-daemon.js config set <key> <value>');
+    log('info', 'Example: node auto-resume-daemon.js config set checkInterval 10000');
+    log('info', 'Example: node auto-resume-daemon.js config set notifications.enabled true');
+    return false;
+  }
+
+  try {
+    // Parse value to appropriate type
+    let parsedValue = value;
+    if (value === 'true') parsedValue = true;
+    else if (value === 'false') parsedValue = false;
+    else if (!isNaN(value) && value !== '') parsedValue = Number(value);
+
+    configManager.setConfigValue(key, parsedValue);
+    log('success', `Set ${key} = ${JSON.stringify(parsedValue)}`);
+    return true;
+  } catch (err) {
+    log('error', `Failed to set config value: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * Show analytics statistics
+ */
+function showAnalytics() {
+  if (!AnalyticsCollector) {
+    log('error', 'analytics-collector module not available');
+    return false;
+  }
+
+  try {
+    const analytics = new AnalyticsCollector();
+    const stats = analytics.getStatistics();
+    const prediction = analytics.getPrediction();
+
+    console.log(`${colors.cyan}Analytics Summary:${colors.reset}\n`);
+
+    console.log(`${colors.yellow}Last 7 Days:${colors.reset}`);
+    console.log(`  Rate limits: ${stats.last7Days.rateLimitCount}`);
+    console.log(`  Resumes: ${stats.last7Days.resumeCount} (${stats.last7Days.successfulResumes} successful)`);
+    console.log(`  Avg wait time: ${stats.last7Days.avgWaitTimeMinutes} minutes`);
+
+    console.log(`\n${colors.yellow}Last 30 Days:${colors.reset}`);
+    console.log(`  Rate limits: ${stats.last30Days.rateLimitCount}`);
+    console.log(`  Resumes: ${stats.last30Days.resumeCount} (${stats.last30Days.successfulResumes} successful)`);
+    console.log(`  Daily average: ${stats.last30Days.dailyAverage.toFixed(1)} rate limits/day`);
+
+    console.log(`\n${colors.yellow}All Time:${colors.reset}`);
+    console.log(`  Total rate limits: ${stats.allTime.rateLimitCount}`);
+    console.log(`  Total resumes: ${stats.allTime.resumeCount}`);
+
+    console.log(`\n${colors.yellow}Prediction:${colors.reset}`);
+    console.log(`  Confidence: ${prediction.confidence}`);
+    console.log(`  ${prediction.message}`);
+
+    return true;
+  } catch (err) {
+    log('error', `Failed to load analytics: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * Test notification system
+ */
+async function testNotification() {
+  if (!NotificationManager) {
+    log('error', 'notification-manager module not available');
+    return false;
+  }
+
+  try {
+    const notifier = new NotificationManager();
+    notifier.init({
+      enabled: true,
+      sound: true,
+      useFallback: true
+    });
+
+    log('info', 'Sending test notification...');
+    const result = await notifier.notify(
+      'Auto-Resume Test',
+      'This is a test notification from Claude Code Auto-Resume daemon.'
+    );
+
+    if (result) {
+      log('success', 'Test notification sent successfully');
+    } else {
+      log('warning', 'Notification may not have been delivered (check if notifications are enabled in system settings)');
+    }
+    return result;
+  } catch (err) {
+    log('error', `Failed to send notification: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * Open GUI dashboard
+ */
+function openGui() {
+  const guiPath = path.join(__dirname, 'gui', 'index.html');
+
+  if (!fs.existsSync(guiPath)) {
+    log('error', `GUI not found at: ${guiPath}`);
+    return false;
+  }
+
+  const platform = os.platform();
+  let command;
+
+  if (platform === 'win32') {
+    command = `start "" "${guiPath}"`;
+  } else if (platform === 'darwin') {
+    command = `open "${guiPath}"`;
+  } else {
+    command = `xdg-open "${guiPath}"`;
+  }
+
+  log('info', `Opening GUI dashboard: ${guiPath}`);
+
+  exec(command, (error) => {
+    if (error) {
+      log('error', `Failed to open GUI: ${error.message}`);
+      log('info', `You can manually open: ${guiPath}`);
+    } else {
+      log('success', 'GUI dashboard opened in default browser');
+    }
+  });
+
+  return true;
+}
+
+/**
  * Show help
  */
 function showHelp() {
@@ -734,6 +924,13 @@ COMMANDS:
     --reset     Clear stale rate limit status and recheck
     --test <s>  Test mode: countdown for <s> seconds then send keystrokes
     help        Show this help message
+
+MODULE COMMANDS:
+    config              Show current configuration
+    config set <k> <v>  Set configuration value (e.g., config set checkInterval 10000)
+    analytics           Show analytics and statistics
+    notify              Send a test notification
+    gui                 Open the GUI dashboard in browser
 
 DAEMON BEHAVIOR:
     1. Watches: ${STATUS_FILE}
@@ -837,6 +1034,32 @@ function main() {
     case 'reset':
       resetStatus();
       process.exit(0);
+      break;
+
+    case 'config':
+      if (args[1] === 'set') {
+        setConfigValue(args[2], args[3]);
+      } else {
+        showConfig();
+      }
+      process.exit(0);
+      break;
+
+    case 'analytics':
+      showAnalytics();
+      process.exit(0);
+      break;
+
+    case 'notify':
+      testNotification().then(() => {
+        process.exit(0);
+      });
+      break;
+
+    case 'gui':
+      openGui();
+      // Give a moment for the command to execute before exiting
+      setTimeout(() => process.exit(0), 500);
       break;
 
     default:
