@@ -10,25 +10,23 @@ Opens the web-based status monitoring dashboard to view real-time daemon status,
 
 ### Execute
 
-**Recommended: Use the daemon's GUI command:**
-
+**macOS/Linux:**
 ```bash
-# Find and run the daemon with GUI flag
-node "$(find ~/.claude/plugins/cache -path "*/auto-resume/*/auto-resume-daemon.js" 2>/dev/null | sort -V | tail -1)" gui
-```
-
-**Platform-specific commands:**
-
-```bash
-# Windows (PowerShell)
-node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" gui
-
-# Windows (CMD)
-node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" gui
-
-# macOS/Linux
 node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js gui
 ```
+
+**Windows (PowerShell):**
+```powershell
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" gui
+```
+
+**Windows (CMD/Git Bash):**
+```cmd
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" gui
+```
+
+> **Note:** When Claude Code executes these commands via Bash tool, use the direct Windows path:
+> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" gui`
 
 This opens http://localhost:3737 in your default browser with the full dashboard GUI.
 

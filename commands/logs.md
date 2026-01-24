@@ -30,10 +30,14 @@ Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 20
 Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Wait -Tail 20
 ```
 
-**Windows (CMD) - View entire log:**
+**Windows (CMD/Git Bash) - View entire log:**
 ```cmd
 type "%USERPROFILE%\.claude\auto-resume\daemon.log"
 ```
+
+> **Note:** When Claude Code executes these commands via Bash tool, use the direct Windows path:
+> `tail -20 "C:\Users\YOUR_USERNAME\.claude\auto-resume\daemon.log"` or
+> `type "C:\Users\YOUR_USERNAME\.claude\auto-resume\daemon.log"`
 
 ### Log Location
 

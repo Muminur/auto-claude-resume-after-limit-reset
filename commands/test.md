@@ -33,10 +33,13 @@ node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.
 node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" test 10
 ```
 
-**Windows (CMD):**
+**Windows (CMD/Git Bash):**
 ```cmd
 node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" test 10
 ```
+
+> **Note:** When Claude Code executes these commands via Bash tool, use the direct Windows path:
+> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" test $ARGUMENTS`
 
 ### Warning
 
