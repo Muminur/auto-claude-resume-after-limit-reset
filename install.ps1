@@ -145,12 +145,12 @@ function Install-Dependencies {
         $npmVersion = npm --version 2>$null
         if (-not $npmVersion) {
             Write-Warning "npm not found, dependencies not installed"
-            Write-Warning "Please run 'npm install' manually in: $AUTO_RESUME_DIR"
+            Write-Warning "Please run 'npm install ws node-notifier --save' manually in: $AUTO_RESUME_DIR"
             return
         }
     } catch {
         Write-Warning "npm not found, dependencies not installed"
-        Write-Warning "Please run 'npm install' manually in: $AUTO_RESUME_DIR"
+        Write-Warning "Please run 'npm install ws node-notifier --save' manually in: $AUTO_RESUME_DIR"
         return
     }
 
@@ -167,11 +167,54 @@ function Install-Dependencies {
             Write-Warning "npm install completed with warnings"
             Write-Host $npmOutput
         }
+
+        # Ensure critical dashboard dependencies are installed
+        Write-Info "Verifying dashboard dependencies (ws, node-notifier)..."
+        $dashboardOutput = npm install ws node-notifier --save 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Dashboard dependencies verified"
+        }
     } catch {
         Write-Warning "Failed to install dependencies: $_"
-        Write-Warning "Please run 'npm install' manually in: $AUTO_RESUME_DIR"
+        Write-Warning "Please run 'npm install ws node-notifier --save' manually in: $AUTO_RESUME_DIR"
     } finally {
         Set-Location $currentDir
+    }
+}
+
+function Install-PluginCacheDependencies {
+    Write-Info "Checking plugin cache dependencies..."
+
+    # Find plugin cache directory
+    $cachePattern = Join-Path $PLUGIN_CACHE_DIR "*\*\package.json"
+    $packageJsonFiles = Get-ChildItem -Path $cachePattern -ErrorAction SilentlyContinue
+
+    if ($packageJsonFiles) {
+        $versionDir = Split-Path $packageJsonFiles[0].FullName -Parent
+        Write-Info "Found plugin cache at: $versionDir"
+
+        $wsModulePath = Join-Path $versionDir "node_modules\ws"
+
+        if (-not (Test-Path $wsModulePath)) {
+            Write-Info "Installing dashboard dependencies in plugin cache..."
+
+            $currentDir = Get-Location
+            try {
+                Set-Location $versionDir
+                $output = npm install ws node-notifier --save 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "Plugin cache dependencies installed"
+                } else {
+                    Write-Warning "Plugin cache dependencies installation had warnings"
+                }
+            } catch {
+                Write-Warning "Failed to install plugin cache dependencies: $_"
+            } finally {
+                Set-Location $currentDir
+            }
+        } else {
+            Write-Success "Plugin cache dependencies already installed"
+        }
     }
 }
 

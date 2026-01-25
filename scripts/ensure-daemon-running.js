@@ -14,6 +14,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Required dependencies for dashboard functionality
+const REQUIRED_DEPS = ['ws', 'node-notifier'];
+
 // Getter functions for paths to make testing easier
 function getHomeDir() {
   return os.homedir();
@@ -25,6 +28,54 @@ function getAutoResumeDir() {
 
 function getPidFile() {
   return path.join(getAutoResumeDir(), 'daemon.pid');
+}
+
+/**
+ * Check if required dependencies are installed in a directory
+ * @param {string} dir - Directory to check for node_modules
+ * @returns {string[]} - Array of missing dependency names
+ */
+function getMissingDeps(dir) {
+  const missing = [];
+  for (const dep of REQUIRED_DEPS) {
+    const depPath = path.join(dir, 'node_modules', dep);
+    if (!fs.existsSync(depPath)) {
+      missing.push(dep);
+    }
+  }
+  return missing;
+}
+
+/**
+ * Install missing dependencies in the specified directory
+ * @param {string} dir - Directory containing package.json
+ * @param {string[]} deps - Dependencies to install
+ * @returns {boolean} - True if installation succeeded
+ */
+function installMissingDeps(dir, deps) {
+  if (deps.length === 0) return true;
+
+  try {
+    // Check if package.json exists
+    const packageJsonPath = path.join(dir, 'package.json');
+    if (!fs.existsSync(packageJsonPath)) {
+      return false;
+    }
+
+    // Run npm install for missing deps
+    const depsStr = deps.join(' ');
+    execSync(`npm install ${depsStr} --save --legacy-peer-deps`, {
+      cwd: dir,
+      stdio: 'pipe',
+      encoding: 'utf8',
+      timeout: 60000 // 60 second timeout
+    });
+
+    return true;
+  } catch (e) {
+    // Installation failed, but don't block daemon start
+    return false;
+  }
 }
 
 // Find daemon path - check plugin location first, then manual install location
@@ -163,6 +214,14 @@ function main() {
       return;
     }
 
+    // Check and install missing dependencies (for dashboard functionality)
+    const daemonDir = path.dirname(daemonPath);
+    const missingDeps = getMissingDeps(daemonDir);
+    if (missingDeps.length > 0) {
+      // Try to install missing dependencies silently
+      installMissingDeps(daemonDir, missingDeps);
+    }
+
     // Start the daemon
     const pid = startDaemon(daemonPath);
 
@@ -191,5 +250,8 @@ module.exports = {
   isDaemonRunning,
   startDaemon,
   main,
-  formatHookOutput
+  formatHookOutput,
+  getMissingDeps,
+  installMissingDeps,
+  REQUIRED_DEPS
 };

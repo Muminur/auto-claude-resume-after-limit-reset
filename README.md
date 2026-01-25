@@ -466,6 +466,44 @@ Grant accessibility permission to Node.js:
 1. System Settings > Privacy & Security > Accessibility
 2. Add your Node.js binary (run `which node` to find path)
 
+### Dashboard Not Loading (ERR_CONNECTION_REFUSED)
+
+If `/auto-resume:gui` shows "ERR_CONNECTION_REFUSED" on localhost:3737, the dashboard dependencies may not be installed.
+
+**Automatic Fix (v1.4.13+):**
+The plugin now auto-installs missing dependencies on session start. Simply restart Claude Code.
+
+**Manual Fix:**
+Install dependencies in the plugin cache directory:
+
+**Windows:**
+```powershell
+cd "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\*"
+npm install ws node-notifier --save
+```
+
+**macOS/Linux:**
+```bash
+cd ~/.claude/plugins/cache/auto-claude-resume/auto-resume/*/
+npm install ws node-notifier --save
+```
+
+Then restart the daemon:
+```
+/auto-resume:stop
+/auto-resume:start
+```
+
+**Verify dashboard is running:**
+```bash
+# Check if ports are listening
+# Windows
+netstat -ano | findstr ":3737 :3847 :3848"
+
+# macOS/Linux
+lsof -i :3737 -i :3847 -i :3848
+```
+
 ## Uninstallation
 
 ```

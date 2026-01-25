@@ -350,8 +350,40 @@ install_dependencies() {
     if command -v npm &> /dev/null; then
         npm install --production 2>&1 | sed 's/^/  /'
         log_success "Dependencies installed"
+
+        # Ensure critical dependencies for dashboard are installed
+        log_info "Verifying dashboard dependencies (ws, node-notifier)..."
+        npm install ws node-notifier --save 2>&1 | sed 's/^/  /'
+        log_success "Dashboard dependencies verified"
     else
         log_warning "npm not found, dependencies not installed"
+        log_warning "Please run 'npm install ws node-notifier --save' manually"
+    fi
+}
+
+install_plugin_cache_dependencies() {
+    log_step "Checking plugin cache dependencies..."
+
+    # Find plugin cache directory
+    local CACHE_DIR="${HOME}/.claude/plugins/cache/auto-claude-resume"
+
+    if [[ -d "$CACHE_DIR" ]]; then
+        # Find the version directory
+        local VERSION_DIR=$(find "$CACHE_DIR" -maxdepth 2 -name "package.json" -exec dirname {} \; 2>/dev/null | head -1)
+
+        if [[ -n "$VERSION_DIR" && -d "$VERSION_DIR" ]]; then
+            log_info "Found plugin cache at: $VERSION_DIR"
+
+            # Check if node_modules/ws exists
+            if [[ ! -d "$VERSION_DIR/node_modules/ws" ]]; then
+                log_info "Installing dashboard dependencies in plugin cache..."
+                cd "$VERSION_DIR"
+                npm install ws node-notifier --save 2>&1 | sed 's/^/  /'
+                log_success "Plugin cache dependencies installed"
+            else
+                log_success "Plugin cache dependencies already installed"
+            fi
+        fi
     fi
 }
 

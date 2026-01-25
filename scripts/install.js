@@ -21,6 +21,9 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+// Critical dependencies required for dashboard functionality
+const DASHBOARD_DEPS = ['ws', 'node-notifier'];
+
 /**
  * Get the installation directory for the auto-resume daemon
  * @returns {string} The absolute path to the installation directory
@@ -205,6 +208,61 @@ function copyPackageJson(options = {}) {
 }
 
 /**
+ * Install dashboard dependencies explicitly
+ * @param {Object} options - Installation options
+ * @returns {Promise<{ success: boolean, error?: string }>} Installation result
+ */
+async function installDashboardDeps(options = {}) {
+  const {
+    dir = getInstallDir(),
+    silent = false
+  } = options;
+
+  if (!isNpmAvailable()) {
+    return { success: false, error: 'npm is not available' };
+  }
+
+  if (!silent) {
+    console.log(`[INFO] Installing dashboard dependencies (${DASHBOARD_DEPS.join(', ')})...`);
+  }
+
+  return new Promise((resolve) => {
+    const args = ['install', ...DASHBOARD_DEPS, '--save'];
+
+    const npmProcess = spawn('npm', args, {
+      cwd: dir,
+      shell: true,
+      stdio: silent ? 'pipe' : 'inherit'
+    });
+
+    npmProcess.on('close', (code) => {
+      if (code === 0) {
+        if (!silent) {
+          console.log('[SUCCESS] Dashboard dependencies installed');
+        }
+        resolve({ success: true });
+      } else {
+        const error = `npm install dashboard deps exited with code ${code}`;
+        if (!silent) {
+          console.error(`[WARNING] ${error}`);
+        }
+        // Don't fail completely, dashboard is optional
+        resolve({ success: true, warning: error });
+      }
+    });
+
+    npmProcess.on('error', (err) => {
+      const error = `Failed to install dashboard deps: ${err.message}`;
+      if (!silent) {
+        console.error(`[WARNING] ${error}`);
+      }
+      // Don't fail completely, dashboard is optional
+      resolve({ success: true, warning: error });
+    });
+  });
+}
+
+/**
  * Full installation: copy package.json and install dependencies
  * @param {Object} options - Installation options
  * @returns {Promise<{ success: boolean, error?: string }>} Installation result
@@ -222,7 +280,15 @@ async function install(options = {}) {
   }
 
   // Install dependencies
-  return installDependencies(options);
+  const installResult = await installDependencies(options);
+  if (!installResult.success) {
+    return installResult;
+  }
+
+  // Install dashboard dependencies explicitly
+  await installDashboardDeps(options);
+
+  return { success: true };
 }
 
 // CLI interface
@@ -277,11 +343,13 @@ Options:
 
 module.exports = {
   installDependencies,
+  installDashboardDeps,
   getInstallDir,
   getPluginSourceDir,
   isNpmAvailable,
   isPackageInstalled,
   checkDependencies,
   copyPackageJson,
-  install
+  install,
+  DASHBOARD_DEPS
 };
