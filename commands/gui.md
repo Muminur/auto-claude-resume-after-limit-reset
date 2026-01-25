@@ -12,21 +12,21 @@ Opens the web-based status monitoring dashboard to view real-time daemon status,
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js gui
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.11/auto-resume-daemon.js gui
 ```
 
 **Windows (PowerShell):**
 ```powershell
-node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" gui
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" gui
 ```
 
 **Windows (CMD/Git Bash):**
 ```cmd
-node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" gui
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" gui
 ```
 
 > **Note:** When Claude Code executes these commands via Bash tool, use the direct Windows path:
-> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" gui`
+> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" gui`
 
 This opens http://localhost:3737 in your default browser with the full dashboard GUI.
 
@@ -51,7 +51,7 @@ If the browser doesn't open automatically, manually navigate to:
 - **URL:** http://localhost:3737
 
 Or open the HTML file directly:
-- **Windows:** `%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\gui\index.html`
-- **macOS/Linux:** `~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/gui/index.html`
+- **Windows:** `%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\gui\index.html`
+- **macOS/Linux:** `~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.11/gui/index.html`
 
 Note: Opening the HTML file directly won't have WebSocket live updates.

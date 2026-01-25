@@ -12,21 +12,21 @@ View or modify the auto-resume daemon configuration settings.
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js config
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.11/auto-resume-daemon.js config
 ```
 
 **Windows (PowerShell):**
 ```powershell
-node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" config
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" config
 ```
 
 **Windows (CMD/Git Bash):**
 ```cmd
-node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" config
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" config
 ```
 
 > **Note:** When Claude Code executes these commands via Bash tool, use the direct Windows path:
-> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" config`
+> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" config`
 
 ### Edit Config
 
@@ -96,12 +96,12 @@ notepad "$env:USERPROFILE\.claude\auto-resume\config.json"
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js reset-config
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.11/auto-resume-daemon.js reset-config
 ```
 
 **Windows (PowerShell):**
 ```powershell
-node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" reset-config
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" reset-config
 ```
 
 ### Apply Changes
@@ -110,12 +110,12 @@ After editing the config file, restart the daemon:
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js restart
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.11/auto-resume-daemon.js restart
 ```
 
 **Windows (PowerShell):**
 ```powershell
-node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" restart
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" restart
 ```
 
 ### Common Configuration Tasks

@@ -18,28 +18,28 @@ Test the auto-resume functionality by running a countdown and then sending "cont
 **macOS/Linux:**
 ```bash
 # With custom countdown (e.g., 30 seconds)
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js test $ARGUMENTS
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.11/auto-resume-daemon.js test $ARGUMENTS
 
 # Default 10 seconds
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js test 10
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.11/auto-resume-daemon.js test 10
 ```
 
 **Windows (PowerShell):**
 ```powershell
 # With custom countdown (e.g., 30 seconds)
-node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" test $ARGUMENTS
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" test $ARGUMENTS
 
 # Default 10 seconds
-node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" test 10
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" test 10
 ```
 
 **Windows (CMD/Git Bash):**
 ```cmd
-node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" test 10
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" test 10
 ```
 
 > **Note:** When Claude Code executes these commands via Bash tool, use the direct Windows path:
-> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" test $ARGUMENTS`
+> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" test $ARGUMENTS`
 
 ### Warning
 

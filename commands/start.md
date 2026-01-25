@@ -12,21 +12,21 @@ Manually start the auto-resume daemon. Note: The daemon auto-starts when you ope
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js start
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.11/auto-resume-daemon.js start
 ```
 
 **Windows (PowerShell):**
 ```powershell
-node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" start
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" start
 ```
 
 **Windows (CMD/Git Bash):**
 ```cmd
-node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" start
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" start
 ```
 
 > **Note:** When Claude Code executes these commands via Bash tool, use the direct Windows path:
-> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js" start`
+> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" start`
 
 ### Expected Output
 
@@ -49,12 +49,12 @@ To start the daemon in background mode (detached from terminal):
 
 **macOS/Linux:**
 ```bash
-nohup node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.4/auto-resume-daemon.js start > /dev/null 2>&1 &
+nohup node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.11/auto-resume-daemon.js start > /dev/null 2>&1 &
 ```
 
 **Windows (PowerShell):**
 ```powershell
-Start-Process -NoNewWindow node -ArgumentList "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.4\auto-resume-daemon.js", "start"
+Start-Process -NoNewWindow node -ArgumentList "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js", "start"
 ```
 
 ### Note
