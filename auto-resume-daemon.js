@@ -541,6 +541,46 @@ function readStatus() {
 }
 
 /**
+ * Check for existing rate limit status on daemon startup
+ */
+function initialStatusCheck() {
+  const status = readStatus();
+
+  if (!status) {
+    log('debug', 'No existing rate limit status found on startup');
+    return;
+  }
+
+  log('info', 'Found existing rate limit status on startup');
+
+  try {
+    const resetTime = new Date(status.reset_time);
+    const now = new Date();
+
+    if (resetTime > now) {
+      // Reset time is in the future - start countdown
+      const remaining = resetTime - now;
+      const formatted = formatTimeRemaining(remaining);
+      log('info', `Rate limit active. Resuming in ${formatted}...`);
+      startCountdown(resetTime);
+    } else {
+      // Reset time has already passed - trigger resume immediately
+      log('info', 'Reset time already passed, triggering resume immediately');
+      sendContinueToTerminals()
+        .then(() => {
+          log('success', 'Auto-resume completed for past rate limit!');
+          clearStatus();
+        })
+        .catch((err) => {
+          log('error', `Auto-resume failed: ${err.message}`);
+        });
+    }
+  } catch (err) {
+    log('error', `Failed to process existing status: ${err.message}`);
+  }
+}
+
+/**
  * Watch status file for changes
  */
 function watchStatusFile() {
@@ -662,6 +702,9 @@ function startDaemon() {
   if (DashboardIntegration) {
     startDashboard();
   }
+
+  // Check for existing rate limit status before starting watcher
+  initialStatusCheck();
 
   // Start watching
   isRunning = true;

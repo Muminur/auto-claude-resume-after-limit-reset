@@ -83,19 +83,63 @@ function parseResetTime(message) {
       resetHour = 0;
     }
 
-    // Create reset time for today
-    const resetDate = new Date(now);
-    resetDate.setHours(resetHour, 0, 0, 0);
+    // Create reset time using the timezone from the message
+    try {
+      // Get current date parts in the specified timezone
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone.trim(),
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      const parts = formatter.formatToParts(now);
+      const year = parts.find(p => p.type === 'year').value;
+      const month = parts.find(p => p.type === 'month').value;
+      const day = parts.find(p => p.type === 'day').value;
 
-    // If reset time is in the past, assume it's tomorrow
-    if (resetDate <= now) {
-      resetDate.setDate(resetDate.getDate() + 1);
+      // Create a date string in the target timezone
+      // Format: YYYY-MM-DDTHH:MM:SS
+      const dateStr = `${year}-${month}-${day}T${resetHour.toString().padStart(2, '0')}:00:00`;
+
+      // Parse this time in the target timezone
+      // We need to calculate the offset
+      const tempDate = new Date(dateStr);
+      const targetFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone.trim(),
+        hour: '2-digit',
+        hour12: false,
+      });
+
+      // Get UTC offset for the target timezone
+      const utcDate = new Date(dateStr + 'Z');
+      const localInTz = new Date(utcDate.toLocaleString('en-US', { timeZone: timezone.trim() }));
+      const offset = localInTz - utcDate;
+
+      // Create the actual reset time by subtracting the offset
+      const resetDate = new Date(tempDate.getTime() - offset);
+
+      // If reset time is in the past, add a day
+      if (resetDate <= now) {
+        resetDate.setDate(resetDate.getDate() + 1);
+      }
+
+      return {
+        reset_time: resetDate.toISOString(),
+        timezone: timezone.trim()
+      };
+    } catch (tzError) {
+      // Fallback: use local time if timezone parsing fails
+      console.error('Timezone parsing failed, using local time:', tzError.message);
+      const resetDate = new Date(now);
+      resetDate.setHours(resetHour, 0, 0, 0);
+      if (resetDate <= now) {
+        resetDate.setDate(resetDate.getDate() + 1);
+      }
+      return {
+        reset_time: resetDate.toISOString(),
+        timezone: timezone.trim()
+      };
     }
-
-    return {
-      reset_time: resetDate.toISOString(),
-      timezone: timezone.trim()
-    };
   }
 
   // Try "try again in X minutes/hours" pattern
