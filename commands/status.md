@@ -12,21 +12,21 @@ Check whether the auto-resume daemon is currently running and view its status.
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.11/auto-resume-daemon.js status
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.13/auto-resume-daemon.js status
 ```
 
 **Windows (PowerShell):**
 ```powershell
-node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" status
+node "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.13\auto-resume-daemon.js" status
 ```
 
 **Windows (CMD/Git Bash):**
 ```cmd
-node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" status
+node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.13\auto-resume-daemon.js" status
 ```
 
 > **Note:** When Claude Code executes these commands via Bash tool, use the direct Windows path:
-> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.11\auto-resume-daemon.js" status`
+> `node "C:\Users\YOUR_USERNAME\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.13\auto-resume-daemon.js" status`
 
 ### Expected Output
 

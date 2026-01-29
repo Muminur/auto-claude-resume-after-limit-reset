@@ -88,9 +88,22 @@ function main() {
   console.log(`  Updated: ${MARKETPLACE_JSON}`);
 
   console.log(`\nVersion bumped to ${newVersion}`);
+
+  // Auto-update command files
+  const updateScript = path.join(__dirname, 'update-command-versions.js');
+  if (fs.existsSync(updateScript)) {
+    console.log('\nUpdating command files...');
+    try {
+      require('child_process').execSync(`node "${updateScript}"`, { stdio: 'inherit' });
+    } catch (e) {
+      console.error('Warning: Failed to update command files. Run manually:');
+      console.error('  node scripts/update-command-versions.js');
+    }
+  }
+
   console.log('\nNext steps:');
-  console.log('  git add .claude-plugin/plugin.json .claude-plugin/marketplace.json');
-  console.log(`  git commit -m "chore: Bump version to ${newVersion}"`);
+  console.log('  git add -A');
+  console.log(`  git commit -m "chore: bump version to ${newVersion}"`);
   console.log('  git push origin main');
 
   return newVersion;
