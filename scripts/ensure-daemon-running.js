@@ -194,9 +194,122 @@ function formatHookOutput(status, message, extra = {}) {
   };
 }
 
+/**
+ * Ensure the Stop hook (rate-limit-hook.js) is registered in settings.json.
+ * This self-heals for ALL users (plugin and manual install) on every session start.
+ * If the Stop hook is missing, it adds it. Never throws - session start must not fail.
+ */
+function ensureStopHookRegistered() {
+  try {
+    const settingsPath = path.join(getHomeDir(), '.claude', 'settings.json');
+
+    // Find the rate-limit-hook.js path
+    let hookPath = null;
+    if (process.env.CLAUDE_PLUGIN_ROOT) {
+      const pluginHook = path.join(process.env.CLAUDE_PLUGIN_ROOT, 'hooks', 'rate-limit-hook.js');
+      if (fs.existsSync(pluginHook)) {
+        hookPath = pluginHook;
+      }
+    }
+    if (!hookPath) {
+      // Check manual install location
+      const manualHook = path.join(getHomeDir(), '.claude', 'hooks', 'rate-limit-hook.js');
+      if (fs.existsSync(manualHook)) {
+        hookPath = manualHook;
+      }
+    }
+    if (!hookPath) {
+      // Search plugin cache
+      const cacheDir = path.join(getHomeDir(), '.claude', 'plugins', 'cache');
+      if (fs.existsSync(cacheDir)) {
+        const findHook = (dir, depth = 0) => {
+          if (depth > 5) return null;
+          try {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                const result = findHook(fullPath, depth + 1);
+                if (result) return result;
+              } else if (entry.name === 'rate-limit-hook.js') {
+                return fullPath;
+              }
+            }
+          } catch (e) { /* ignore */ }
+          return null;
+        };
+        hookPath = findHook(cacheDir);
+      }
+    }
+
+    // If hook script not found on disk, nothing to register
+    if (!hookPath) return;
+
+    // Read settings.json
+    let settings = {};
+    if (fs.existsSync(settingsPath)) {
+      try {
+        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      } catch (e) {
+        // Can't parse settings.json - don't risk corrupting it
+        return;
+      }
+    } else {
+      // No settings.json exists - don't create one just for this
+      return;
+    }
+
+    // Check if Stop hook with rate-limit-hook.js already exists
+    if (settings.hooks && settings.hooks.Stop) {
+      const stopHooks = settings.hooks.Stop;
+      for (const group of stopHooks) {
+        if (group.hooks) {
+          for (const hook of group.hooks) {
+            if (hook.command && hook.command.includes('rate-limit-hook.js')) {
+              // Already registered, nothing to do
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    // Stop hook is missing - add it
+    if (!settings.hooks) {
+      settings.hooks = {};
+    }
+    if (!settings.hooks.Stop) {
+      settings.hooks.Stop = [];
+    }
+
+    // Normalize path for the command
+    const normalizedPath = hookPath.replace(/\\/g, '\\\\');
+
+    settings.hooks.Stop.push({
+      matcher: "",
+      hooks: [
+        {
+          type: "command",
+          command: `node "${normalizedPath}"`,
+          timeout: 15
+        }
+      ]
+    });
+
+    // Write back
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+
+  } catch (e) {
+    // Never fail session start - silently ignore errors
+  }
+}
+
 // Main function
 function main() {
   try {
+    // Self-heal: ensure Stop hook is registered in settings.json
+    ensureStopHookRegistered();
+
     // Check if already running
     if (isDaemonRunning()) {
       // Daemon is running, output success silently
@@ -253,5 +366,6 @@ module.exports = {
   formatHookOutput,
   getMissingDeps,
   installMissingDeps,
+  ensureStopHookRegistered,
   REQUIRED_DEPS
 };

@@ -293,6 +293,33 @@ function Merge-Settings {
     Set-Content -Path $SettingsPath -Value $settingsJson -Encoding UTF8
 }
 
+function Verify-StopHook {
+    param(
+        [string]$SettingsPath
+    )
+
+    Write-Host "  Verifying Stop hook registration..." -ForegroundColor Cyan
+
+    if (-not (Test-Path $SettingsPath)) {
+        Write-Host "  Settings file not found, skipping verification" -ForegroundColor Yellow
+        return
+    }
+
+    try {
+        $content = Get-Content $SettingsPath -Raw
+        if ($content -match "rate-limit-hook\.js") {
+            Write-Host "  Stop hook already registered" -ForegroundColor Green
+            return
+        }
+
+        Write-Host "  Stop hook missing, adding..." -ForegroundColor Yellow
+        Merge-Settings -SettingsPath $SettingsPath
+        Write-Host "  Stop hook registered successfully" -ForegroundColor Green
+    } catch {
+        Write-Warning "  Failed to verify Stop hook: $_"
+    }
+}
+
 function Create-StartupScript {
     $scriptContent = @"
 # Claude Auto-Resume Daemon Startup Script
@@ -476,6 +503,12 @@ function Install-Plugin {
     } else {
         Write-Info "Skipped startup configuration"
     }
+
+    Write-Host ""
+
+    # Step 7: Verify Stop hook registration
+    Write-Info "Final verification..."
+    Verify-StopHook -SettingsPath $SETTINGS_FILE
 
     Write-Host ""
     Write-Host ""

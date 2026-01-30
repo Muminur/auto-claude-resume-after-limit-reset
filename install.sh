@@ -337,6 +337,45 @@ update_settings() {
     fi
 }
 
+verify_stop_hook() {
+    log_step "Verifying Stop hook registration..."
+
+    if [[ ! -f "$SETTINGS_FILE" ]]; then
+        log_warning "Settings file not found, skipping verification"
+        return 0
+    fi
+
+    # Check if rate-limit-hook.js is already in settings
+    if grep -q "rate-limit-hook.js" "$SETTINGS_FILE"; then
+        log_success "Stop hook already registered"
+        return 0
+    fi
+
+    log_warning "Stop hook missing, adding..."
+
+    if command -v jq &> /dev/null; then
+        # Safe append using jq - preserves existing hooks
+        local TEMP_FILE=$(mktemp)
+        local HOOK_ENTRY='{
+          "type": "command",
+          "command": "node ~/.claude/hooks/rate-limit-hook.js",
+          "timeout": 10
+        }'
+
+        # Ensure hooks.Stop array exists and append to it
+        jq --argjson entry "$HOOK_ENTRY" '
+          .hooks //= {} |
+          .hooks.Stop //= [] |
+          .hooks.Stop += [{"hooks": [$entry]}]
+        ' "$SETTINGS_FILE" > "$TEMP_FILE" && mv "$TEMP_FILE" "$SETTINGS_FILE"
+
+        log_success "Stop hook registered (via jq)"
+    else
+        log_warning "jq not available. Please manually add the Stop hook to ~/.claude/settings.json"
+        log_info "See installation guide for the JSON snippet to add"
+    fi
+}
+
 install_dependencies() {
     log_step "Installing npm dependencies..."
 
@@ -495,6 +534,9 @@ install() {
 
     # Update settings
     update_settings
+
+    # Verify Stop hook registration
+    verify_stop_hook
 
     # Install dependencies
     install_dependencies
