@@ -381,8 +381,10 @@ Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
       });
     } else {
       // Linux: Use xdotool to find and send to terminal windows
-      exec('command -v xdotool', (error) => {
-        if (error) {
+      // Use which to find xdotool (more reliable across environments than command -v)
+      exec('which xdotool 2>/dev/null || command -v xdotool 2>/dev/null', (error, xdotoolPath) => {
+        const xdotool = xdotoolPath ? xdotoolPath.trim() : null;
+        if (error || !xdotool) {
           log('error', 'xdotool not found. Please install it:');
           log('info', '  Ubuntu/Debian: sudo apt-get install xdotool');
           log('info', '  RHEL/CentOS: sudo yum install xdotool');
@@ -390,6 +392,8 @@ Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
           reject(new Error('xdotool not found'));
           return;
         }
+
+        log('debug', `Using xdotool at: ${xdotool}`);
 
         // Read Claude PID from status file for targeted window finding
         let claudePid = null;
@@ -402,67 +406,159 @@ Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
           log('debug', 'Could not read claude_pid from status file');
         }
 
-        // Build the command to find the right terminal window and send keystrokes
-        const findAndSend = `
-          SENT=0
-          TARGET_WID=""
+        // Write shell script to temp file to avoid exec escaping/buffer issues
+        const tempScript = path.join(os.tmpdir(), `claude-auto-resume-send-${process.pid}.sh`);
+        const scriptLines = [
+          '#!/bin/sh',
+          'set +e',
+          `XDOT="${xdotool}"`,
+          'SENT=0',
+          'STRATEGY=""',
+          'WINDOW_IDS=""',
+          '',
+          '# Save current active window to restore focus later',
+          'ORIG_WID=$($XDOT getactivewindow 2>/dev/null || true)',
+        ];
 
-          # Strategy 1: Find the terminal window via Claude Code's PID (process tree walk)
-          ${claudePid ? `
-          WALK_PID=${claudePid}
-          while [ -n "$WALK_PID" ] && [ "$WALK_PID" != "1" ] && [ "$WALK_PID" != "0" ]; do
-            WID=$(xdotool search --pid "$WALK_PID" 2>/dev/null | head -1)
-            if [ -n "$WID" ]; then
-              TARGET_WID="$WID"
-              break
-            fi
-            WALK_PID=$(ps -o ppid= -p "$WALK_PID" 2>/dev/null | tr -d ' ')
-          done
-          ` : ''}
+        // Strategy 1: Find terminal window via saved Claude Code PID
+        if (claudePid) {
+          scriptLines.push(
+            '',
+            '# Strategy 1: Saved Claude PID process tree walk',
+            `WALK_PID=${claudePid}`,
+            'if kill -0 "$WALK_PID" 2>/dev/null; then',
+            '  while [ -n "$WALK_PID" ] && [ "$WALK_PID" != "1" ] && [ "$WALK_PID" != "0" ]; do',
+            '    WIDS=$($XDOT search --pid "$WALK_PID" 2>/dev/null)',
+            '    if [ -n "$WIDS" ]; then',
+            '      WINDOW_IDS="$WIDS"',
+            '      STRATEGY="saved-pid"',
+            '      break',
+            '    fi',
+            '    WALK_PID=$(ps -o ppid= -p "$WALK_PID" 2>/dev/null | tr -d " ")',
+            '  done',
+            'fi',
+          );
+        }
 
-          # Strategy 2: Fallback to all terminal windows if PID-based search failed
-          if [ -z "$TARGET_WID" ]; then
-            WINDOW_IDS=$(xdotool search --class "[Gg]nome-terminal|[Kk]onsole|[Xx][Tt]erm|[Tt]erminator|[Aa]lacritty|[Kk]itty|[Tt]ilix|foot|[Ww]ez[Tt]erm" 2>/dev/null)
-            if [ -z "$WINDOW_IDS" ]; then
-              WINDOW_IDS=$(xdotool search --name "[Tt]erminal|[Kk]onsole|[Aa]lacritty|[Kk]itty" 2>/dev/null)
-            fi
-          else
-            WINDOW_IDS="$TARGET_WID"
-          fi
+        // Strategy 2: Find live Claude Code processes
+        scriptLines.push(
+          '',
+          '# Strategy 2: Live Claude process discovery',
+          'if [ -z "$WINDOW_IDS" ]; then',
+          `  DAEMON_PID=${process.pid}`,
+          '  CLAUDE_PIDS=$(pgrep -f "claude" 2>/dev/null | grep -v "^$DAEMON_PID$" | head -10)',
+          '  for cpid in $CLAUDE_PIDS; do',
+          '    WALK_PID=$cpid',
+          '    while [ -n "$WALK_PID" ] && [ "$WALK_PID" != "1" ] && [ "$WALK_PID" != "0" ]; do',
+          '      WIDS=$($XDOT search --pid "$WALK_PID" 2>/dev/null)',
+          '      if [ -n "$WIDS" ]; then',
+          '        for wid in $WIDS; do',
+          '          case " $WINDOW_IDS " in',
+          '            *" $wid "*) ;;',
+          '            *) WINDOW_IDS="$WINDOW_IDS $wid" ;;',
+          '          esac',
+          '        done',
+          '        break',
+          '      fi',
+          '      WALK_PID=$(ps -o ppid= -p "$WALK_PID" 2>/dev/null | tr -d " ")',
+          '    done',
+          '  done',
+          '  WINDOW_IDS=$(echo $WINDOW_IDS | xargs)',
+          '  if [ -n "$WINDOW_IDS" ]; then',
+          '    STRATEGY="live-pid"',
+          '  fi',
+          'fi',
+        );
 
-          for wid in $WINDOW_IDS; do
-            xdotool windowactivate --sync $wid 2>/dev/null
-            sleep 0.3
+        // Strategy 3: All terminal windows (fallback)
+        scriptLines.push(
+          '',
+          '# Strategy 3: All terminal windows (last resort)',
+          'if [ -z "$WINDOW_IDS" ]; then',
+          '  WINDOW_IDS=$($XDOT search --class "gnome-terminal|Gnome-terminal|konsole|Konsole|xterm|XTerm|terminator|Terminator|alacritty|Alacritty|kitty|Kitty|tilix|Tilix|foot|wezterm|WezTerm" 2>/dev/null)',
+          '  if [ -z "$WINDOW_IDS" ]; then',
+          '    WINDOW_IDS=$($XDOT search --name "Terminal|terminal|konsole|Konsole" 2>/dev/null)',
+          '  fi',
+          '  if [ -n "$WINDOW_IDS" ]; then',
+          '    STRATEGY="all-terminals"',
+          '  fi',
+          'fi',
+        );
 
-            # Step 1: Press Escape to dismiss any open interactive menu
-            xdotool key --clearmodifiers Escape
-            sleep 0.5
+        // Send keystrokes
+        // IMPORTANT: Do NOT use --window flag with xdotool type/key.
+        // --window uses XSendEvent which gnome-terminal (and many apps) silently ignore.
+        // Without --window, xdotool uses XTEST extension which injects real keystrokes.
+        scriptLines.push(
+          '',
+          'if [ -z "$WINDOW_IDS" ]; then',
+          '  echo "ERROR: No terminal windows found"',
+          '  exit 1',
+          'fi',
+          '',
+          '# Filter to real terminal windows (must have WM_CLASS)',
+          'VALID_WIDS=""',
+          'for wid in $WINDOW_IDS; do',
+          '  if xprop -id "$wid" WM_CLASS 2>/dev/null | grep -q "not found"; then',
+          '    continue',
+          '  fi',
+          '  case " $VALID_WIDS " in',
+          '    *" $wid "*) ;;',
+          '    *) VALID_WIDS="$VALID_WIDS $wid" ;;',
+          '  esac',
+          'done',
+          'VALID_WIDS=$(echo $VALID_WIDS | xargs)',
+          '',
+          'if [ -z "$VALID_WIDS" ]; then',
+          '  echo "ERROR: No valid terminal windows found"',
+          '  exit 1',
+          'fi',
+          '',
+          'for wid in $VALID_WIDS; do',
+          '  # Activate window (raises and focuses it) with timeout to prevent hangs',
+          '  timeout 2 $XDOT windowactivate --sync "$wid" 2>/dev/null || $XDOT windowfocus "$wid" 2>/dev/null',
+          '  sleep 0.3',
+          '  # Use XTEST (no --window flag) so keystrokes are not ignored by terminal',
+          '  $XDOT key --clearmodifiers Escape 2>/dev/null',
+          '  sleep 0.3',
+          '  $XDOT key --clearmodifiers ctrl+u 2>/dev/null',
+          '  sleep 0.3',
+          '  $XDOT type --clearmodifiers --delay 50 "continue" 2>/dev/null',
+          '  sleep 0.2',
+          '  $XDOT key Return 2>/dev/null',
+          '  sleep 0.3',
+          '  SENT=$((SENT + 1))',
+          'done',
+          '',
+          '# Restore original window focus',
+          'if [ -n "$ORIG_WID" ]; then',
+          '  timeout 2 $XDOT windowactivate --sync "$ORIG_WID" 2>/dev/null || $XDOT windowfocus "$ORIG_WID" 2>/dev/null || true',
+          'fi',
+          '',
+          'echo "Sent to $SENT window(s) (strategy: $STRATEGY)"',
+          'exit 0',
+        );
 
-            # Step 2: Press Ctrl+U to clear any stale input on the command line
-            xdotool key --clearmodifiers ctrl+u
-            sleep 0.3
+        fs.writeFileSync(tempScript, scriptLines.join('\n'), { mode: 0o755 });
 
-            # Step 3: Type 'continue' + Enter to resume the conversation
-            xdotool type --clearmodifiers "continue"
-            xdotool key Return
-            sleep 0.3
-            SENT=$((SENT + 1))
-          done
-          if [ -n "$TARGET_WID" ]; then
-            echo "Sent to $SENT window (PID-targeted)"
-          else
-            echo "Sent to $SENT terminal windows (fallback: all terminals)"
-          fi
-        `;
+        exec(`/bin/sh "${tempScript}"`, { timeout: 30000 }, (err, stdout, stderr) => {
+          // Clean up temp file
+          try { fs.unlinkSync(tempScript); } catch (e) { /* ignore */ }
 
-        exec(findAndSend, (err, stdout) => {
           if (err) {
             log('error', `Failed to send keystrokes: ${err.message}`);
+            if (stderr) log('debug', `stderr: ${stderr}`);
             reject(err);
           } else {
-            log('success', `Sent: Escape, Ctrl+U, then continue + Enter to terminal windows`);
-            if (stdout.trim()) log('info', stdout.trim());
-            resolve();
+            const output = stdout.trim();
+            if (output.startsWith('ERROR:')) {
+              log('error', output);
+              reject(new Error(output));
+            } else {
+              log('success', 'Sent: Escape, Ctrl+U, then continue + Enter to terminal windows');
+              if (output) log('info', output);
+              resolve();
+            }
           }
         });
       });
