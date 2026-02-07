@@ -2,6 +2,8 @@
 
 Complete guide for installing Auto Claude Resume on Linux (Ubuntu, Debian, Fedora, Arch, etc.).
 
+> **Important:** `xdotool` is the **only required system dependency** on Linux. Without it, the plugin will install and the daemon will start, but it will **silently fail to resume your sessions** when the rate limit countdown ends. Install it before anything else.
+
 ## Prerequisites
 
 - Linux with Bash shell
@@ -44,6 +46,24 @@ sudo pacman -S xdotool
 **openSUSE:**
 ```bash
 sudo zypper install xdotool
+```
+
+**Alternative (GUI password prompt):**
+
+If `sudo` can't prompt for a password (e.g., when running inside Claude Code CLI), use `pkexec` to trigger a graphical authentication dialog:
+```bash
+pkexec apt-get install -y xdotool    # Ubuntu/Debian
+pkexec dnf install -y xdotool        # Fedora
+```
+
+**Verify installation:**
+```bash
+# Confirm xdotool is installed
+which xdotool
+
+# Confirm it can find terminal windows (requires X11 display)
+xdotool search --class "gnome-terminal"
+# Should output one or more window IDs like: 44040193
 ```
 
 ### Step 2: Create Configuration Directory
@@ -329,18 +349,50 @@ Ensure you've added the marketplace first:
 /plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
 ```
 
-### "xdotool: command not found"
+### "xdotool: command not found" / Sessions Not Resuming
 
-Install xdotool for your distribution:
+**Symptom:** The daemon starts and counts down correctly, but when the countdown ends, nothing happens. Your session is not resumed. The daemon log (`~/.claude/auto-resume/daemon.log`) shows:
+
+```
+ERROR: xdotool not found. Please install it:
+ERROR: [TEST] Failed to send keystrokes: xdotool not found
+```
+
+**Fix:**
+
 ```bash
-# Ubuntu/Debian
-sudo apt install xdotool
+# Install xdotool
+sudo apt-get install -y xdotool          # Ubuntu/Debian
+sudo dnf install -y xdotool              # Fedora
+sudo pacman -S --noconfirm xdotool       # Arch
 
-# Fedora
-sudo dnf install xdotool
+# If sudo can't prompt for password, use GUI prompt:
+pkexec apt-get install -y xdotool
 
-# Arch
-sudo pacman -S xdotool
+# IMPORTANT: Restart the daemon after installing xdotool
+# The running daemon won't detect the new binary automatically
+/auto-resume:stop     # In Claude Code
+/auto-resume:start
+
+# Or from terminal:
+DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
+node "$DAEMON" stop && node "$DAEMON" start
+```
+
+**Verify the fix:**
+```bash
+# 1. Confirm xdotool is installed
+which xdotool
+
+# 2. Confirm it can find your terminal windows
+xdotool search --class "gnome-terminal"
+
+# 3. Run the built-in test (sends keystrokes after countdown)
+/auto-resume:test
+
+# 4. Check daemon log for success message
+tail -5 ~/.claude/auto-resume/daemon.log
+# Should show: [TEST] Test completed successfully!
 ```
 
 ### Node.js Not Found or Wrong Version
@@ -383,9 +435,15 @@ The daemon uses `xdotool` to send keystrokes. Common issues:
 
 3. **No DISPLAY variable:**
    ```bash
+   # Check current DISPLAY
+   echo $DISPLAY    # Should be :0 or :1
+
+   # Set DISPLAY if not set
    export DISPLAY=:0
    node ~/.claude/auto-resume/auto-resume-daemon.js start
    ```
+
+   For systemd services, add `Environment=DISPLAY=:1` to the `[Service]` section of the unit file.
 
 ### Wayland Compatibility
 

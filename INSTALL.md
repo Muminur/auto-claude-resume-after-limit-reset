@@ -8,6 +8,8 @@ This guide covers all installation methods for the Auto Claude Resume plugin.
 
 Installation is **identical** for Windows, macOS, and Linux. Just two steps!
 
+> **Linux users:** You must install `xdotool` before using the plugin. Without it, the daemon starts but **silently fails to send keystrokes** when the rate limit countdown ends. Run: `sudo apt-get install -y xdotool` (Ubuntu/Debian) or see [Linux Detailed Guide](docs/INSTALL-LINUX.md).
+
 ### Step 1: Add the Marketplace
 
 In Claude Code, run:
@@ -88,6 +90,9 @@ sudo pacman -S xdotool
 # Make installer executable and run
 chmod +x install.sh
 ./install.sh
+
+# Verify xdotool can find terminal windows
+xdotool search --class "gnome-terminal"
 ```
 
 ---
@@ -138,6 +143,19 @@ After installation, verify everything works:
 ```bash
 # Test with 10-second countdown
 DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
+node "$DAEMON" --test 10
+```
+
+**If the test shows "xdotool not found":**
+```bash
+# Install xdotool (see Linux manual section above)
+sudo apt-get install -y xdotool
+
+# Restart the daemon to pick up the new binary
+DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
+node "$DAEMON" stop && node "$DAEMON" start
+
+# Re-run the test
 node "$DAEMON" --test 10
 ```
 

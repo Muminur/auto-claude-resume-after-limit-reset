@@ -138,6 +138,26 @@ Test desktop notification system:
 
 ### Method 1: Claude Code Plugin (Recommended)
 
+**Linux Users: Install xdotool first!**
+
+The plugin requires `xdotool` on Linux to send keystrokes to your terminal. Without it, the daemon will start but **silently fail to resume sessions** — no visible error, just nothing happens when the countdown ends.
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y xdotool
+
+# Fedora
+sudo dnf install -y xdotool
+
+# Arch
+sudo pacman -S --noconfirm xdotool
+```
+
+Verify it works:
+```bash
+xdotool search --class "gnome-terminal"   # Should return window IDs
+```
+
 **Step 1:** Add the marketplace (run in Claude Code):
 ```
 /plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
@@ -449,15 +469,49 @@ Verify the hook is registered in Claude Code settings:
 
 ### Linux: xdotool Required
 
+**Symptom:** The daemon starts, detects rate limits, counts down correctly, but when the countdown ends **nothing happens** — your session is not resumed. The daemon log at `~/.claude/auto-resume/daemon.log` shows:
+
+```
+ERROR: xdotool not found. Please install it:
+ERROR: [TEST] Failed to send keystrokes: xdotool not found
+```
+
+**Fix:**
+
 ```bash
 # Ubuntu/Debian
-sudo apt-get install xdotool
+sudo apt-get install -y xdotool
 
-# RHEL/CentOS
-sudo yum install xdotool
+# If sudo needs a terminal password (e.g., inside Claude Code CLI), use pkexec for a GUI prompt:
+pkexec apt-get install -y xdotool
+
+# Fedora
+sudo dnf install -y xdotool
 
 # Arch
-sudo pacman -S xdotool
+sudo pacman -S --noconfirm xdotool
+```
+
+**After installing, restart the daemon** so it picks up the new binary:
+```
+/auto-resume:stop
+/auto-resume:start
+```
+
+Or from terminal:
+```bash
+DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
+node "$DAEMON" stop
+node "$DAEMON" start
+```
+
+**Verify xdotool works with your display:**
+```bash
+# Should return one or more window IDs
+xdotool search --class "gnome-terminal"
+
+# Run the built-in test (sends keystrokes after countdown)
+/auto-resume:test
 ```
 
 ### macOS: Accessibility Permission

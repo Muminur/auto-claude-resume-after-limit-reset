@@ -156,6 +156,45 @@ check_xdotool_linux() {
         log_success "xdotool is installed"
     fi
 
+    # Verify xdotool can access the display
+    if [[ -n "$DISPLAY" ]]; then
+        local WINDOW_COUNT
+        WINDOW_COUNT=$(xdotool search --class "gnome-terminal|konsole|xterm|terminator|alacritty|kitty" 2>/dev/null | wc -l)
+        if [[ "$WINDOW_COUNT" -gt 0 ]]; then
+            log_success "xdotool verified: found $WINDOW_COUNT terminal window(s)"
+        else
+            log_warning "xdotool installed but no terminal windows detected"
+            log_info "This is normal if you're running this from a non-graphical session"
+        fi
+    else
+        log_warning "DISPLAY variable not set - xdotool requires an X11 display"
+        log_info "Set DISPLAY before starting the daemon: export DISPLAY=:0"
+    fi
+
+    return 0
+}
+
+check_display() {
+    log_step "Checking display server..."
+
+    if [[ -z "$DISPLAY" ]]; then
+        log_warning "DISPLAY is not set"
+        log_info "xdotool requires an X11 display to send keystrokes"
+        log_info "If using Wayland, set GDK_BACKEND=x11 or switch to X11 session"
+        return 1
+    else
+        log_success "DISPLAY is set to $DISPLAY"
+    fi
+
+    # Check if running on Wayland
+    if [[ "$XDG_SESSION_TYPE" == "wayland" ]]; then
+        log_warning "Wayland session detected"
+        log_info "xdotool works best with X11. Options:"
+        log_info "  1. Switch to X11 session at login screen"
+        log_info "  2. Run with: GDK_BACKEND=x11 node auto-resume-daemon.js start"
+        log_info "  3. Install ydotool as Wayland alternative"
+    fi
+
     return 0
 }
 
@@ -198,6 +237,7 @@ check_requirements() {
     # Platform-specific checks
     if [[ "$PLATFORM" == "linux" ]]; then
         check_xdotool_linux
+        check_display
     elif [[ "$PLATFORM" == "macos" ]]; then
         check_accessibility_macos
     fi
