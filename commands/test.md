@@ -18,10 +18,10 @@ Test the auto-resume functionality by running a countdown and then sending "cont
 **macOS/Linux:**
 ```bash
 # With custom countdown (e.g., 30 seconds)
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.13/auto-resume-daemon.js test $ARGUMENTS
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.16/auto-resume-daemon.js test $ARGUMENTS
 
 # Default 10 seconds
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.13/auto-resume-daemon.js test 10
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.16/auto-resume-daemon.js test 10
 ```
 
 **Windows (PowerShell):**
