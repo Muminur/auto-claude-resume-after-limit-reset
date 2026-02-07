@@ -259,6 +259,10 @@ function ensureStopHookRegistered() {
       return;
     }
 
+    // Build the desired command using the current hookPath
+    const normalizedPath = hookPath.replace(/\\/g, '\\\\');
+    const desiredCommand = `node "${normalizedPath}"`;
+
     // Check if Stop hook with rate-limit-hook.js already exists
     if (settings.hooks && settings.hooks.Stop) {
       const stopHooks = settings.hooks.Stop;
@@ -266,7 +270,13 @@ function ensureStopHookRegistered() {
         if (group.hooks) {
           for (const hook of group.hooks) {
             if (hook.command && hook.command.includes('rate-limit-hook.js')) {
-              // Already registered, nothing to do
+              if (hook.command === desiredCommand) {
+                // Already up to date, nothing to do
+                return;
+              }
+              // Stale path (e.g. old version) - update it
+              hook.command = desiredCommand;
+              fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
               return;
             }
           }
@@ -282,15 +292,12 @@ function ensureStopHookRegistered() {
       settings.hooks.Stop = [];
     }
 
-    // Normalize path for the command
-    const normalizedPath = hookPath.replace(/\\/g, '\\\\');
-
     settings.hooks.Stop.push({
       matcher: "",
       hooks: [
         {
           type: "command",
-          command: `node "${normalizedPath}"`,
+          command: desiredCommand,
           timeout: 15
         }
       ]
