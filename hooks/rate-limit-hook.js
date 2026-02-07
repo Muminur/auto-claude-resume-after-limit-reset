@@ -55,8 +55,8 @@ const MAX_RATE_LIMIT_MESSAGE_LENGTH = 200;
 
 // Time parsing patterns
 const TIME_PATTERNS = {
-  // "resets 7pm (America/New_York)"
-  resetTime: /resets\s+(\d+)(am|pm)\s*\(([^)]+)\)/i,
+  // "resets 7pm (America/New_York)" or "resets 2:30pm (Asia/Dhaka)"
+  resetTime: /resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)/i,
   // "try again in X minutes/hours"
   tryAgainIn: /try again in\s+(\d+)\s*(minutes?|hours?|seconds?)/i,
   // ISO timestamp in error messages
@@ -69,12 +69,13 @@ const TIME_PATTERNS = {
  * @returns {Object|null} - { reset_time: ISO string, timezone: string } or null
  */
 function parseResetTime(message) {
-  // Try "resets Xpm (Timezone)" pattern
+  // Try "resets Xpm (Timezone)" or "resets X:YYpm (Timezone)" pattern
   const resetMatch = message.match(TIME_PATTERNS.resetTime);
   if (resetMatch) {
-    const [, hour, ampm, timezone] = resetMatch;
+    const [, hour, minutes, ampm, timezone] = resetMatch;
     const now = new Date();
     let resetHour = parseInt(hour, 10);
+    const resetMinutes = minutes ? parseInt(minutes, 10) : 0;
 
     // Convert to 24-hour format
     if (ampm.toLowerCase() === 'pm' && resetHour !== 12) {
@@ -99,7 +100,7 @@ function parseResetTime(message) {
 
       // Create a date string in the target timezone
       // Format: YYYY-MM-DDTHH:MM:SS
-      const dateStr = `${year}-${month}-${day}T${resetHour.toString().padStart(2, '0')}:00:00`;
+      const dateStr = `${year}-${month}-${day}T${resetHour.toString().padStart(2, '0')}:${resetMinutes.toString().padStart(2, '0')}:00`;
 
       // Parse this time in the target timezone
       // We need to calculate the offset
@@ -131,7 +132,7 @@ function parseResetTime(message) {
       // Fallback: use local time if timezone parsing fails
       console.error('Timezone parsing failed, using local time:', tzError.message);
       const resetDate = new Date(now);
-      resetDate.setHours(resetHour, 0, 0, 0);
+      resetDate.setHours(resetHour, resetMinutes, 0, 0);
       if (resetDate <= now) {
         resetDate.setDate(resetDate.getDate() + 1);
       }
@@ -458,6 +459,9 @@ function updateStatusFile(rateLimitInfo, sessionId) {
   status.timezone = rateLimitInfo.timezone;
   status.last_detected = new Date().toISOString();
   status.message = rateLimitInfo.message;
+  // Save Claude Code's PID (parent of this hook process) for window targeting
+  // The daemon uses this to walk up the process tree and find the terminal window
+  status.claude_pid = process.ppid;
 
   // Add session to sessions array if not already present
   const trackSessionId = rateLimitInfo.session_id || sessionId;

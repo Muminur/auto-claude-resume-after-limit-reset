@@ -296,10 +296,14 @@ function formatTimeRemaining(ms) {
 
 /**
  * Send keystrokes to Claude Code terminals
- * Handles the new interactive menu flow:
- * 1. Send "1" (without Enter) to select option 1
- * 2. Wait 1 second
- * 3. Send "continue" + Enter
+ * Handles the rate limit recovery flow:
+ * 1. Press Escape to dismiss any open interactive menu (rate-limit-options)
+ * 2. Press Ctrl+U to clear any stale input on the command line
+ * 3. Type "continue" + Enter to resume the conversation
+ *
+ * The interactive menu (rate-limit-options) uses arrow keys + Enter navigation,
+ * NOT number key selection. Option 1 is selected by default, but we dismiss
+ * the menu with Escape instead to avoid state ambiguity.
  */
 async function sendContinueToTerminals() {
   const platform = os.platform();
@@ -311,13 +315,17 @@ async function sendContinueToTerminals() {
       const scriptContent = `
 Add-Type -AssemblyName System.Windows.Forms
 
-# Step 1: Send '1' to select option 1 from the interactive menu (no Enter)
-[System.Windows.Forms.SendKeys]::SendWait('1')
-Start-Sleep -Seconds 1
+# Step 1: Press Escape to dismiss any open interactive menu
+[System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+Start-Sleep -Milliseconds 500
 
-# Step 2: Send 'continue' + Enter to resume the conversation
+# Step 2: Press Ctrl+U to clear any stale input
+[System.Windows.Forms.SendKeys]::SendWait('^u')
+Start-Sleep -Milliseconds 300
+
+# Step 3: Type 'continue' + Enter to resume the conversation
 [System.Windows.Forms.SendKeys]::SendWait('continue{ENTER}')
-Write-Output "Sent 1, then continue + Enter to current window"
+Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
 `;
 
       // Write script to temp file
@@ -346,10 +354,13 @@ Write-Output "Sent 1, then continue + Enter to current window"
             if (exists process appName) then
               tell process appName
                 set frontmost to true
-                -- Step 1: Send '1' to select option 1 (no return)
-                keystroke "1"
-                delay 1
-                -- Step 2: Send 'continue' + return to resume
+                -- Step 1: Press Escape to dismiss any open menu
+                key code 53
+                delay 0.5
+                -- Step 2: Press Ctrl+U to clear input line
+                keystroke "u" using control down
+                delay 0.3
+                -- Step 3: Type 'continue' + Return to resume
                 keystroke "continue"
                 keystroke return
                 delay 0.5
@@ -364,7 +375,7 @@ Write-Output "Sent 1, then continue + Enter to current window"
           log('error', `Failed to send keystrokes: ${error.message}`);
           reject(error);
         } else {
-          log('success', `Sent: 1, then continue + Enter to terminal windows`);
+          log('success', `Sent: Escape, Ctrl+U, then continue + Enter to terminal windows`);
           resolve();
         }
       });
@@ -380,20 +391,68 @@ Write-Output "Sent 1, then continue + Enter to current window"
           return;
         }
 
-        // Find all terminal windows and send keystrokes
+        // Read Claude PID from status file for targeted window finding
+        let claudePid = null;
+        try {
+          if (fs.existsSync(STATUS_FILE)) {
+            const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
+            claudePid = statusData.claude_pid;
+          }
+        } catch (e) {
+          log('debug', 'Could not read claude_pid from status file');
+        }
+
+        // Build the command to find the right terminal window and send keystrokes
         const findAndSend = `
-          # Find windows with common terminal classes
-          for wid in $(xdotool search --class "gnome-terminal|konsole|xterm|terminator|alacritty|kitty" 2>/dev/null); do
-            xdotool windowactivate --sync $wid
-            sleep 0.2
-            # Step 1: Send '1' to select option 1 (no Return)
-            xdotool type --clearmodifiers "1"
-            sleep 1
-            # Step 2: Send 'continue' + Return to resume
+          SENT=0
+          TARGET_WID=""
+
+          # Strategy 1: Find the terminal window via Claude Code's PID (process tree walk)
+          ${claudePid ? `
+          WALK_PID=${claudePid}
+          while [ -n "$WALK_PID" ] && [ "$WALK_PID" != "1" ] && [ "$WALK_PID" != "0" ]; do
+            WID=$(xdotool search --pid "$WALK_PID" 2>/dev/null | head -1)
+            if [ -n "$WID" ]; then
+              TARGET_WID="$WID"
+              break
+            fi
+            WALK_PID=$(ps -o ppid= -p "$WALK_PID" 2>/dev/null | tr -d ' ')
+          done
+          ` : ''}
+
+          # Strategy 2: Fallback to all terminal windows if PID-based search failed
+          if [ -z "$TARGET_WID" ]; then
+            WINDOW_IDS=$(xdotool search --class "[Gg]nome-terminal|[Kk]onsole|[Xx][Tt]erm|[Tt]erminator|[Aa]lacritty|[Kk]itty|[Tt]ilix|foot|[Ww]ez[Tt]erm" 2>/dev/null)
+            if [ -z "$WINDOW_IDS" ]; then
+              WINDOW_IDS=$(xdotool search --name "[Tt]erminal|[Kk]onsole|[Aa]lacritty|[Kk]itty" 2>/dev/null)
+            fi
+          else
+            WINDOW_IDS="$TARGET_WID"
+          fi
+
+          for wid in $WINDOW_IDS; do
+            xdotool windowactivate --sync $wid 2>/dev/null
+            sleep 0.3
+
+            # Step 1: Press Escape to dismiss any open interactive menu
+            xdotool key --clearmodifiers Escape
+            sleep 0.5
+
+            # Step 2: Press Ctrl+U to clear any stale input on the command line
+            xdotool key --clearmodifiers ctrl+u
+            sleep 0.3
+
+            # Step 3: Type 'continue' + Enter to resume the conversation
             xdotool type --clearmodifiers "continue"
             xdotool key Return
             sleep 0.3
+            SENT=$((SENT + 1))
           done
+          if [ -n "$TARGET_WID" ]; then
+            echo "Sent to $SENT window (PID-targeted)"
+          else
+            echo "Sent to $SENT terminal windows (fallback: all terminals)"
+          fi
         `;
 
         exec(findAndSend, (err, stdout) => {
@@ -401,13 +460,32 @@ Write-Output "Sent 1, then continue + Enter to current window"
             log('error', `Failed to send keystrokes: ${err.message}`);
             reject(err);
           } else {
-            log('success', `Sent: 1, then continue + Enter to terminal windows`);
+            log('success', `Sent: Escape, Ctrl+U, then continue + Enter to terminal windows`);
+            if (stdout.trim()) log('info', stdout.trim());
             resolve();
           }
         });
       });
     }
   });
+}
+
+/**
+ * Trigger manual resume from GUI or API
+ * Sends keystrokes to terminal and clears status
+ */
+function triggerResume() {
+  log('info', 'Manual resume triggered');
+  sendContinueToTerminals()
+    .then(() => {
+      log('success', 'Manual resume completed!');
+      clearStatus();
+      currentResetTime = null;
+      stopCountdown();
+    })
+    .catch((err) => {
+      log('error', `Manual resume failed: ${err.message}`);
+    });
 }
 
 /**
@@ -481,20 +559,23 @@ function startCountdown(resetTime) {
       clearInterval(countdownInterval);
       countdownInterval = null;
       safeStdoutWrite(
-        `\r${colors.green}[READY] Reset time reached! Sending option 1...${colors.reset}\n`
+        `\r${colors.green}[READY] Reset time reached! Waiting 5s for API to fully reset...${colors.reset}\n`
       );
-      log('info', 'Reset time reached! Sending option 1...');
+      log('info', 'Reset time reached! Waiting 5 seconds for API to fully reset...');
 
-      // Send "1" to select option 1 from the interactive menu
-      sendContinueToTerminals()
-        .then(() => {
-          log('success', 'Auto-resume completed!');
-          clearStatus();
-          currentResetTime = null;
-        })
-        .catch((err) => {
-          log('error', `Auto-resume failed: ${err.message}`);
-        });
+      // Wait 5 seconds after reset time to ensure API has actually reset
+      setTimeout(() => {
+        log('info', 'Sending continue to terminals...');
+        sendContinueToTerminals()
+          .then(() => {
+            log('success', 'Auto-resume completed!');
+            clearStatus();
+            currentResetTime = null;
+          })
+          .catch((err) => {
+            log('error', `Auto-resume failed: ${err.message}`);
+          });
+      }, 5000);
     } else {
       const formatted = formatTimeRemaining(remaining);
       safeStdoutWrite(
@@ -858,7 +939,7 @@ function showBanner() {
 async function runTest(seconds) {
   showBanner();
   log('warning', `[TEST MODE] Simulating rate limit with ${seconds} second countdown`);
-  log('warning', 'WARNING: This will send "1" + Enter to terminal windows!');
+  log('warning', 'WARNING: This will send Escape + Ctrl+U + "continue" + Enter to terminal windows!');
   log('info', '');
 
   const resetTime = new Date(Date.now() + seconds * 1000);
@@ -886,7 +967,7 @@ async function runTest(seconds) {
       } else {
         const formatted = formatTimeRemaining(remaining);
         safeStdoutWrite(
-          `\r${colors.yellow}[TEST] Sending "1" in ${formatted}...${colors.reset}`
+          `\r${colors.yellow}[TEST] Sending "continue" in ${formatted}...${colors.reset}`
         );
       }
     }, 1000);
@@ -1200,7 +1281,7 @@ DAEMON BEHAVIOR:
        - Shows countdown timer in console
        - When reset time arrives:
          - Finds all Claude Code terminal windows
-         - Sends "1" + Enter to select option 1
+         - Sends Escape + Ctrl+U + "continue" + Enter
          - Clears the status file
     3. Logs all activity to: ${LOG_FILE}
 
