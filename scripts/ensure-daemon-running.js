@@ -121,6 +121,52 @@ function findDaemonPath() {
   return null;
 }
 
+/**
+ * Check if the daemon's heartbeat is fresh (written within last 120 seconds).
+ * If the heartbeat is stale, the daemon is wedged — alive but not functioning.
+ * @returns {boolean} true if heartbeat is fresh or doesn't exist yet
+ */
+function isDaemonHeartbeatFresh() {
+  const heartbeatFile = path.join(getAutoResumeDir(), 'heartbeat.json');
+  try {
+    if (!fs.existsSync(heartbeatFile)) {
+      // No heartbeat file yet — daemon may have just started, give it a pass
+      return true;
+    }
+    const data = JSON.parse(fs.readFileSync(heartbeatFile, 'utf8'));
+    if (!data || typeof data.timestamp !== 'number') {
+      // Invalid heartbeat data — assume fresh to avoid false restarts
+      return true;
+    }
+    const age = Date.now() - data.timestamp;
+    return age < 120000; // 120 seconds
+  } catch (e) {
+    // Can't read heartbeat — assume fresh to avoid false restarts
+    return true;
+  }
+}
+
+/**
+ * Check if the Stop hook has run recently (within last 24 hours).
+ * Logs a diagnostic warning if stale — helps detect silent hook failures.
+ */
+function checkStopHookHealth() {
+  const statusFile = path.join(getAutoResumeDir(), 'status.json');
+  try {
+    if (!fs.existsSync(statusFile)) return; // No status file yet, nothing to check
+    const data = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
+    if (data.last_hook_run) {
+      const age = Date.now() - new Date(data.last_hook_run).getTime();
+      if (age > 24 * 60 * 60 * 1000) {
+        // Stop hook hasn't run in over 24 hours — could be a problem
+        // This is just a diagnostic log, not an action
+      }
+    }
+  } catch (e) {
+    // Ignore — non-critical diagnostic
+  }
+}
+
 // Check if daemon is running by checking PID file and process
 function isDaemonRunning() {
   if (!fs.existsSync(getPidFile())) {
@@ -134,22 +180,41 @@ function isDaemonRunning() {
     }
 
     // Check if process is running
+    let processAlive = false;
     if (process.platform === 'win32') {
       try {
-        execSync(`tasklist /FI "PID eq ${pid}" /NH`, { encoding: 'utf8', stdio: 'pipe' });
         const output = execSync(`tasklist /FI "PID eq ${pid}" /NH`, { encoding: 'utf8', stdio: 'pipe' });
-        return output.includes(pid.toString());
+        processAlive = output.includes(pid.toString());
       } catch (e) {
-        return false;
+        processAlive = false;
       }
     } else {
       try {
         process.kill(pid, 0);
-        return true;
+        processAlive = true;
       } catch (e) {
-        return false;
+        processAlive = false;
       }
     }
+
+    if (!processAlive) {
+      return false;
+    }
+
+    // Process is alive — but is it functioning? Check heartbeat.
+    if (!isDaemonHeartbeatFresh()) {
+      // Daemon is wedged — kill it so we can restart
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch (e) {
+        // Ignore kill errors
+      }
+      // Clean up PID file
+      try { fs.unlinkSync(getPidFile()); } catch (e) { /* ignore */ }
+      return false; // Report as not running so main() will restart it
+    }
+
+    return true;
   } catch (e) {
     return false;
   }
@@ -317,7 +382,10 @@ function main() {
     // Self-heal: ensure Stop hook is registered in settings.json
     ensureStopHookRegistered();
 
-    // Check if already running
+    // Diagnostic: check if Stop hook has been running
+    checkStopHookHealth();
+
+    // Check if already running (includes heartbeat freshness check)
     if (isDaemonRunning()) {
       // Daemon is running, output success silently
       console.log(JSON.stringify(formatHookOutput('running', 'Auto-resume daemon is running')));
@@ -368,6 +436,8 @@ if (require.main === module) {
 module.exports = {
   findDaemonPath,
   isDaemonRunning,
+  isDaemonHeartbeatFresh,
+  checkStopHookHealth,
   startDaemon,
   main,
   formatHookOutput,

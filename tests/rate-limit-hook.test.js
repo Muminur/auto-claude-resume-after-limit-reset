@@ -481,9 +481,9 @@ describe('rate-limit-hook - Subagent Transcript Scanning', () => {
         expect(isRateLimitMessage(shortMessage)).toBe(true);
       });
 
-      it('should reject messages over 200 characters', () => {
-        const longMessage = "You've hit your limit · resets 7pm (UTC) " + 'x'.repeat(200);
-        expect(longMessage.length).toBeGreaterThan(200);
+      it('should reject messages over 500 characters', () => {
+        const longMessage = "You've hit your limit · resets 7pm (UTC) " + 'x'.repeat(500);
+        expect(longMessage.length).toBeGreaterThan(500);
         expect(isRateLimitMessage(longMessage)).toBe(false);
       });
 

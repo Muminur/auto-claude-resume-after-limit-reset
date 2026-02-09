@@ -12,7 +12,7 @@ Opens the web-based status monitoring dashboard to view real-time daemon status,
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.5.0/auto-resume-daemon.js gui
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.6.0/auto-resume-daemon.js gui
 ```
 
 **Windows (PowerShell):**
@@ -52,6 +52,6 @@ If the browser doesn't open automatically, manually navigate to:
 
 Or open the HTML file directly:
 - **Windows:** `%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.13\gui\index.html`
-- **macOS/Linux:** `~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.5.0/gui/index.html`
+- **macOS/Linux:** `~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.6.0/gui/index.html`
 
 Note: Opening the HTML file directly won't have WebSocket live updates.

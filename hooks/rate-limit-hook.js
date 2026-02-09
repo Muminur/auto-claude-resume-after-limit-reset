@@ -51,7 +51,9 @@ const FALSE_POSITIVE_INDICATORS = [
 ];
 
 // Maximum length for a valid rate limit message (real messages are short)
-const MAX_RATE_LIMIT_MESSAGE_LENGTH = 200;
+// Bumped from 200 to 500 — false-positive filters (tool_result, line numbers,
+// function defs) are the real guard; this is a secondary safety net.
+const MAX_RATE_LIMIT_MESSAGE_LENGTH = 500;
 
 // Time parsing patterns
 const TIME_PATTERNS = {
@@ -539,6 +541,22 @@ async function main() {
       // No transcript path - exit silently
       process.exit(0);
       return;
+    }
+
+    // Record that the hook ran (for watchdog diagnostics)
+    try {
+      if (!fs.existsSync(STATUS_DIR)) {
+        fs.mkdirSync(STATUS_DIR, { recursive: true });
+      }
+      // Read existing status or create minimal one
+      let hookStatus = {};
+      if (fs.existsSync(STATUS_FILE)) {
+        try { hookStatus = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8')); } catch (e) { /* use empty */ }
+      }
+      hookStatus.last_hook_run = new Date().toISOString();
+      fs.writeFileSync(STATUS_FILE, JSON.stringify(hookStatus, null, 2), 'utf8');
+    } catch (e) {
+      // Non-critical — don't fail the hook for diagnostics
     }
 
     // Analyze transcript for rate limits (including subagents)

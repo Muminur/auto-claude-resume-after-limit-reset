@@ -15,7 +15,9 @@ const DEFAULT_CONFIG = {
   api: { enabled: false, port: 3848 },
   analytics: { enabled: true, retentionDays: 30 },
   watchPaths: [],
-  plugins: { enabled: false, directory: '~/.claude/auto-resume/plugins' }
+  plugins: { enabled: false, directory: '~/.claude/auto-resume/plugins' },
+  daemon: { transcriptPolling: true, maxLogSizeMB: 1 },
+  resume: { postResetDelaySec: 10, maxRetries: 4, verificationWindowSec: 90 }
 };
 
 /**
@@ -60,6 +62,21 @@ const CONFIG_SCHEMA = {
     properties: {
       enabled: { type: 'boolean', required: true },
       directory: { type: 'string', required: true }
+    }
+  },
+  daemon: {
+    type: 'object',
+    properties: {
+      transcriptPolling: { type: 'boolean', required: true },
+      maxLogSizeMB: { type: 'number', min: 1, max: 100, required: true }
+    }
+  },
+  resume: {
+    type: 'object',
+    properties: {
+      postResetDelaySec: { type: 'number', min: 1, max: 300, required: true },
+      maxRetries: { type: 'number', min: 0, max: 10, required: true },
+      verificationWindowSec: { type: 'number', min: 10, max: 600, required: true }
     }
   }
 };

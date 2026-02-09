@@ -58,6 +58,7 @@ const BASE_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
 const STATUS_FILE = path.join(BASE_DIR, 'status.json');
 const PID_FILE = path.join(BASE_DIR, 'daemon.pid');
 const LOG_FILE = path.join(BASE_DIR, 'daemon.log');
+const HEARTBEAT_FILE = path.join(BASE_DIR, 'heartbeat.json');
 
 // ANSI color codes
 const colors = {
@@ -71,10 +72,18 @@ const colors = {
   white: '\x1b[37m',
 };
 
+// Log rotation settings
+const MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024; // 1MB
+let logCallCount = 0;
+const LOG_ROTATION_CHECK_INTERVAL = 100; // Check size every N log calls
+
 // State management
 let isRunning = false;
 let watchInterval = null;
 let countdownInterval = null;
+let heartbeatInterval = null;
+let selfWatchdogInterval = null;
+let transcriptPollInterval = null;
 let currentResetTime = null;
 let lastStatusMtime = null;
 let isBackgroundMode = false;  // Track if running detached (no stdout)
@@ -93,6 +102,24 @@ function safeStdoutWrite(text) {
     if (err.code === 'EPIPE') {
       isBackgroundMode = true;
     }
+  }
+}
+
+/**
+ * Rotate log file if it exceeds MAX_LOG_SIZE_BYTES.
+ * Keeps one backup: daemon.log -> daemon.log.1
+ */
+function rotateLogIfNeeded() {
+  try {
+    if (!fs.existsSync(LOG_FILE)) return;
+    const stats = fs.statSync(LOG_FILE);
+    if (stats.size >= MAX_LOG_SIZE_BYTES) {
+      const backupPath = LOG_FILE + '.1';
+      try { fs.unlinkSync(backupPath); } catch (e) { /* no backup yet */ }
+      fs.renameSync(LOG_FILE, backupPath);
+    }
+  } catch (err) {
+    // Ignore rotation errors — don't break logging
   }
 }
 
@@ -121,6 +148,12 @@ function log(level, message) {
         isBackgroundMode = true;
       }
     }
+  }
+
+  // Rotate log file periodically to prevent unbounded growth
+  logCallCount++;
+  if (logCallCount % LOG_ROTATION_CHECK_INTERVAL === 0) {
+    rotateLogIfNeeded();
   }
 
   // Always write to log file (critical for background operation)
@@ -160,6 +193,49 @@ function removePidFile() {
     }
   } catch (err) {
     log('error', `Failed to remove PID file: ${err.message}`);
+  }
+}
+
+/**
+ * Write heartbeat file with current timestamp and PID.
+ * Called every 30 seconds so SessionStart hook can detect wedged daemons.
+ */
+function writeHeartbeat() {
+  try {
+    fs.writeFileSync(HEARTBEAT_FILE, JSON.stringify({
+      timestamp: Date.now(),
+      pid: process.pid
+    }), 'utf8');
+  } catch (err) {
+    // Non-fatal — log but don't crash
+    log('debug', `Failed to write heartbeat: ${err.message}`);
+  }
+}
+
+/**
+ * Start periodic heartbeat writes (every 30 seconds)
+ */
+function startHeartbeat() {
+  writeHeartbeat(); // Write immediately on start
+  heartbeatInterval = setInterval(writeHeartbeat, 30000);
+  log('debug', `Heartbeat started (writing to ${HEARTBEAT_FILE} every 30s)`);
+}
+
+/**
+ * Stop heartbeat interval
+ */
+function stopHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+  // Clean up heartbeat file on clean shutdown
+  try {
+    if (fs.existsSync(HEARTBEAT_FILE)) {
+      fs.unlinkSync(HEARTBEAT_FILE);
+    }
+  } catch (err) {
+    // Ignore
   }
 }
 
@@ -446,7 +522,7 @@ Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
           '# Strategy 2: Live Claude process discovery',
           'if [ -z "$WINDOW_IDS" ]; then',
           `  DAEMON_PID=${process.pid}`,
-          '  CLAUDE_PIDS=$(pgrep -f "claude" 2>/dev/null | grep -v "^$DAEMON_PID$" | head -10)',
+          '  CLAUDE_PIDS=$(pgrep -f "claude-code|claude --" 2>/dev/null | grep -v "^$DAEMON_PID$" | grep -v "auto-resume-daemon" | head -10)',
           '  for cpid in $CLAUDE_PIDS; do',
           '    WALK_PID=$cpid',
           '    while [ -n "$WALK_PID" ] && [ "$WALK_PID" != "1" ] && [ "$WALK_PID" != "0" ]; do',
@@ -638,6 +714,131 @@ function resetStatus() {
 }
 
 /**
+ * Get a config value with fallback to default
+ * @param {string} key - dot-notation config key
+ * @param {*} defaultValue - fallback if config unavailable
+ */
+function getConfigValue(key, defaultValue) {
+  if (!configManager) return defaultValue;
+  try {
+    const config = configManager.getConfig();
+    const parts = key.split('.');
+    let val = config;
+    for (const part of parts) {
+      if (val && typeof val === 'object' && part in val) {
+        val = val[part];
+      } else {
+        return defaultValue;
+      }
+    }
+    return val;
+  } catch (e) {
+    return defaultValue;
+  }
+}
+
+/**
+ * Send keystrokes with retry on failure.
+ * @param {number} maxRetries - max retry attempts
+ * @param {number} retryDelaySec - seconds between retries
+ * @returns {Promise<boolean>} true if send succeeded
+ */
+async function sendWithRetry(maxRetries = 3, retryDelaySec = 10) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await sendContinueToTerminals();
+      return true;
+    } catch (err) {
+      log('error', `Keystroke send failed (attempt ${attempt}/${maxRetries}): ${err.message}`);
+      if (attempt < maxRetries) {
+        log('info', `Retrying in ${retryDelaySec} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelaySec * 1000));
+      }
+    }
+  }
+  log('error', `All ${maxRetries} keystroke send attempts failed`);
+  return false;
+}
+
+/**
+ * Attempt resume with post-send verification.
+ * After sending keystrokes, watches status.json for re-detection.
+ * If rate limit re-appears, retries with exponential backoff.
+ */
+async function attemptResume() {
+  const maxRetries = getConfigValue('resume.maxRetries', 4);
+  const verificationWindowSec = getConfigValue('resume.verificationWindowSec', 90);
+  const backoffDelays = [10, 20, 40, 60]; // seconds between resume retries
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delay = backoffDelays[Math.min(attempt - 1, backoffDelays.length - 1)];
+      log('warning', `Resume attempt ${attempt + 1}/${maxRetries + 1} after ${delay}s backoff...`);
+      await new Promise(resolve => setTimeout(resolve, delay * 1000));
+    }
+
+    log('info', 'Sending continue to terminals...');
+    const sent = await sendWithRetry(3, 10);
+    if (!sent) {
+      log('error', 'Failed to send keystrokes, will retry resume cycle');
+      continue;
+    }
+
+    // Record the timestamp right after sending
+    const sentAt = Date.now();
+
+    // Watch for re-detection within the verification window
+    log('info', `Verifying resume for ${verificationWindowSec}s...`);
+    const reDetected = await new Promise((resolve) => {
+      const checkInterval = setInterval(() => {
+        const elapsed = (Date.now() - sentAt) / 1000;
+        if (elapsed >= verificationWindowSec) {
+          clearInterval(checkInterval);
+          resolve(false); // No re-detection — success!
+        }
+
+        try {
+          if (fs.existsSync(STATUS_FILE)) {
+            const status = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
+            // Check if a NEW detection occurred after we sent keystrokes
+            if (status.detected && status.last_detected) {
+              const detectedAt = new Date(status.last_detected).getTime();
+              if (detectedAt > sentAt) {
+                clearInterval(checkInterval);
+                resolve(true); // Re-detected — resume failed
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore read errors during verification
+        }
+      }, 10000); // Check every 10 seconds
+    });
+
+    if (!reDetected) {
+      log('success', 'Auto-resume completed! No re-detection within verification window.');
+      clearStatus();
+      currentResetTime = null;
+      return;
+    }
+
+    log('warning', 'Rate limit re-detected after resume attempt — API may not be ready yet');
+  }
+
+  // All attempts exhausted
+  log('error', `Resume failed after ${maxRetries + 1} attempts`);
+  if (NotificationManager) {
+    try {
+      const notifier = new NotificationManager();
+      notifier.init({ enabled: true, sound: true });
+      await notifier.notify('Auto-Resume Failed', `Failed to resume after ${maxRetries + 1} attempts. Manual intervention needed.`);
+    } catch (e) {
+      // Best effort
+    }
+  }
+}
+
+/**
  * Start countdown timer display
  */
 function startCountdown(resetTime) {
@@ -646,6 +847,7 @@ function startCountdown(resetTime) {
   }
 
   currentResetTime = resetTime;
+  const postResetDelaySec = getConfigValue('resume.postResetDelaySec', 10);
 
   countdownInterval = setInterval(() => {
     const now = new Date();
@@ -655,23 +857,14 @@ function startCountdown(resetTime) {
       clearInterval(countdownInterval);
       countdownInterval = null;
       safeStdoutWrite(
-        `\r${colors.green}[READY] Reset time reached! Waiting 5s for API to fully reset...${colors.reset}\n`
+        `\r${colors.green}[READY] Reset time reached! Waiting ${postResetDelaySec}s for API to fully reset...${colors.reset}\n`
       );
-      log('info', 'Reset time reached! Waiting 5 seconds for API to fully reset...');
+      log('info', `Reset time reached! Waiting ${postResetDelaySec} seconds for API to fully reset...`);
 
-      // Wait 5 seconds after reset time to ensure API has actually reset
+      // Wait for configurable delay after reset time before attempting resume
       setTimeout(() => {
-        log('info', 'Sending continue to terminals...');
-        sendContinueToTerminals()
-          .then(() => {
-            log('success', 'Auto-resume completed!');
-            clearStatus();
-            currentResetTime = null;
-          })
-          .catch((err) => {
-            log('error', `Auto-resume failed: ${err.message}`);
-          });
-      }, 5000);
+        attemptResume();
+      }, postResetDelaySec * 1000);
     } else {
       const formatted = formatTimeRemaining(remaining);
       safeStdoutWrite(
@@ -843,6 +1036,146 @@ function watchStatusFile() {
 }
 
 /**
+ * Self-watchdog: verify daemon's own health every 60 seconds.
+ * Checks that watch interval is active, directories are writable,
+ * and memory usage is within limits.
+ */
+function startSelfWatchdog() {
+  selfWatchdogInterval = setInterval(() => {
+    try {
+      // Check 1: watch interval is still active
+      if (isRunning && !watchInterval) {
+        log('warning', '[WATCHDOG] Watch interval lost, restarting...');
+        watchStatusFile();
+      }
+
+      // Check 2: base directory is writable
+      try {
+        fs.accessSync(BASE_DIR, fs.constants.W_OK);
+      } catch (e) {
+        log('error', `[WATCHDOG] Base directory not writable: ${BASE_DIR}`);
+        // Attempt to recreate
+        try { fs.mkdirSync(BASE_DIR, { recursive: true }); } catch (e2) { /* give up */ }
+      }
+
+      // Check 3: memory usage < 200MB
+      const memUsage = process.memoryUsage();
+      const heapMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+      if (heapMB > 200) {
+        log('error', `[WATCHDOG] Memory usage too high: ${heapMB}MB. Exiting for restart.`);
+        process.exit(1); // SessionStart hook will restart us
+      }
+    } catch (err) {
+      log('error', `[WATCHDOG] Self-check failed: ${err.message}`);
+    }
+  }, 60000);
+
+  log('debug', 'Self-watchdog started (checking every 60s)');
+}
+
+/**
+ * Redundant transcript polling — scans recent transcripts for rate limit
+ * patterns as a fallback when the Stop hook doesn't fire.
+ */
+function startTranscriptPolling() {
+  const enabled = getConfigValue('daemon.transcriptPolling', true);
+  if (!enabled) {
+    log('debug', 'Transcript polling disabled by config');
+    return;
+  }
+
+  // Try to import the rate-limit-hook's analyzeTranscript function
+  let analyzeTranscript = null;
+  let parseResetTime = null;
+  try {
+    // Try plugin root first, then manual install location
+    const hookPaths = [
+      path.join(__dirname, 'hooks', 'rate-limit-hook.js'),
+      path.join(HOME_DIR, '.claude', 'hooks', 'rate-limit-hook.js'),
+    ];
+    for (const hookPath of hookPaths) {
+      if (fs.existsSync(hookPath)) {
+        const hookModule = require(hookPath);
+        analyzeTranscript = hookModule.analyzeTranscript;
+        parseResetTime = hookModule.parseResetTime;
+        break;
+      }
+    }
+  } catch (e) {
+    log('debug', `Could not import rate-limit-hook module: ${e.message}`);
+  }
+
+  if (!analyzeTranscript) {
+    log('debug', 'Transcript polling unavailable (hook module not found)');
+    return;
+  }
+
+  transcriptPollInterval = setInterval(async () => {
+    try {
+      // Skip if we already have an active detection
+      const currentStatus = readStatus();
+      if (currentStatus && currentStatus.detected) {
+        return; // Already tracking a rate limit
+      }
+
+      // Find the most recent transcript file
+      const projectsDir = path.join(HOME_DIR, '.claude', 'projects');
+      if (!fs.existsSync(projectsDir)) return;
+
+      let latestFile = null;
+      let latestMtime = 0;
+
+      // Walk project directories to find most recent .jsonl
+      const scanDir = (dir, depth = 0) => {
+        if (depth > 3) return; // Don't go too deep
+        try {
+          const entries = fs.readdirSync(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+              scanDir(fullPath, depth + 1);
+            } else if (entry.name.endsWith('.jsonl')) {
+              try {
+                const stats = fs.statSync(fullPath);
+                if (stats.mtimeMs > latestMtime) {
+                  latestMtime = stats.mtimeMs;
+                  latestFile = fullPath;
+                }
+              } catch (e) { /* skip unreadable */ }
+            }
+          }
+        } catch (e) { /* skip unreadable dirs */ }
+      };
+      scanDir(projectsDir);
+
+      if (!latestFile) return;
+
+      // Only scan transcripts modified in the last 10 minutes
+      if (Date.now() - latestMtime > 10 * 60 * 1000) return;
+
+      const result = await analyzeTranscript(latestFile);
+      if (result && result.detected) {
+        log('warning', '[POLL] Rate limit detected via transcript polling (Stop hook may have missed it)');
+        // Write to status file so the normal countdown flow picks it up
+        const statusData = {
+          detected: true,
+          reset_time: result.reset_time,
+          timezone: result.timezone,
+          last_detected: new Date().toISOString(),
+          message: result.message,
+          detection_source: 'transcript_poll'
+        };
+        fs.writeFileSync(STATUS_FILE, JSON.stringify(statusData, null, 2), 'utf8');
+      }
+    } catch (err) {
+      log('debug', `[POLL] Transcript scan error: ${err.message}`);
+    }
+  }, 30000); // Every 30 seconds
+
+  log('debug', 'Transcript polling started (scanning every 30s)');
+}
+
+/**
  * Start daemon
  */
 function startDaemon() {
@@ -875,6 +1208,12 @@ function startDaemon() {
   log('info', `Log file: ${LOG_FILE}`);
   log('info', `PID file: ${PID_FILE}`);
 
+  // Start heartbeat (so SessionStart hook can detect wedged daemons)
+  startHeartbeat();
+
+  // Start self-watchdog (periodic health check)
+  startSelfWatchdog();
+
   // Start dashboard servers if available
   if (DashboardIntegration) {
     startDashboard();
@@ -882,6 +1221,9 @@ function startDaemon() {
 
   // Check for existing rate limit status before starting watcher
   initialStatusCheck();
+
+  // Start transcript polling (redundant detection fallback)
+  startTranscriptPolling();
 
   // Start watching
   isRunning = true;
@@ -974,6 +1316,21 @@ function setupSignalHandlers() {
     // Stop countdown
     stopCountdown();
 
+    // Stop heartbeat
+    stopHeartbeat();
+
+    // Stop self-watchdog
+    if (selfWatchdogInterval) {
+      clearInterval(selfWatchdogInterval);
+      selfWatchdogInterval = null;
+    }
+
+    // Stop transcript polling
+    if (transcriptPollInterval) {
+      clearInterval(transcriptPollInterval);
+      transcriptPollInterval = null;
+    }
+
     // Stop dashboard servers
     if (dashboard) {
       try {
@@ -981,6 +1338,17 @@ function setupSignalHandlers() {
         log('info', 'Dashboard servers stopped');
       } catch (error) {
         log('error', `Error stopping dashboard: ${error.message}`);
+      }
+    }
+
+    // Send death notification if this is an error shutdown
+    if (signal === 'ERROR' && NotificationManager) {
+      try {
+        const notifier = new NotificationManager();
+        notifier.init({ enabled: true, sound: false });
+        await notifier.notify('Auto-Resume Daemon Crashed', `Daemon exited due to: ${signal}`);
+      } catch (e) {
+        // Best effort — don't let notification failure prevent clean shutdown
       }
     }
 
@@ -995,7 +1363,7 @@ function setupSignalHandlers() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
   // Handle uncaught errors - but NOT EPIPE (that's expected in background)
-  process.on('uncaughtException', (err) => {
+  process.on('uncaughtException', async (err) => {
     // EPIPE is expected when running detached - just switch to background mode
     if (err.code === 'EPIPE') {
       isBackgroundMode = true;
@@ -1004,6 +1372,19 @@ function setupSignalHandlers() {
 
     log('error', `Uncaught exception: ${err.message}`);
     log('error', err.stack);
+
+    // Last-gasp death notification
+    if (NotificationManager) {
+      try {
+        const notifier = new NotificationManager();
+        notifier.init({ enabled: true, sound: false });
+        await notifier.notify('Auto-Resume Daemon Crashed',
+          `Fatal error: ${err.message}. Daemon will restart on next Claude Code session.`);
+      } catch (e) {
+        // Best effort — don't let notification failure prevent shutdown
+      }
+    }
+
     shutdown('ERROR');
   });
 }
