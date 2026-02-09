@@ -12,7 +12,7 @@ Stop the running auto-resume daemon.
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.6.0/auto-resume-daemon.js stop
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.7.0/auto-resume-daemon.js stop
 ```
 
 **Windows (PowerShell):**
