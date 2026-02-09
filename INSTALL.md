@@ -4,9 +4,27 @@ This guide covers installation for the Auto Claude Resume plugin.
 
 ---
 
-## Quick Install (All Platforms)
+## One-Line Install (Recommended)
 
-Clone the repository and run the installer for your platform.
+The fastest way to install. Checks dependencies, clones, installs, and cleans up automatically.
+
+**Linux / macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Muminur/auto-claude-resume-after-limit-reset/main/quick-install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/Muminur/auto-claude-resume-after-limit-reset/main/install.ps1 | iex
+```
+
+> **Linux users:** The installer will auto-install `xdotool` if missing (may prompt for sudo password or show a GUI auth dialog).
+
+---
+
+## Manual Install (All Platforms)
+
+If you prefer to clone the repository yourself:
 
 > **Linux users:** You must install `xdotool` for keystroke sending. The installer will offer to install it for you, or run: `sudo apt-get install -y xdotool` (Ubuntu/Debian). See [Linux Detailed Guide](docs/INSTALL-LINUX.md).
 
@@ -66,6 +84,18 @@ The installer registers a **SessionStart hook** that:
 3. Starts the daemon if it's not running
 
 This means you **don't need to configure auto-start manually** - just install and it works!
+
+---
+
+## Persistence (Reboot / Restart FAQ)
+
+| Scenario | Works? | How |
+|----------|--------|-----|
+| **Close Claude Code, reopen** | Yes | SessionStart hook auto-starts daemon if not running. |
+| **Reboot computer** | Yes | Daemon stops on reboot, but SessionStart hook restarts it on next Claude Code launch. |
+| **Close terminal** | Yes | Daemon runs detached from the terminal process. |
+
+No cron jobs, systemd services, or login scripts are required — the SessionStart hook handles all auto-start scenarios.
 
 ---
 

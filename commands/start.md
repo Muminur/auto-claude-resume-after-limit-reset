@@ -12,7 +12,7 @@ Manually start the auto-resume daemon. Note: The daemon auto-starts when you ope
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.17/auto-resume-daemon.js start
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.5.0/auto-resume-daemon.js start
 ```
 
 **Windows (PowerShell):**
@@ -49,7 +49,7 @@ To start the daemon in background mode (detached from terminal):
 
 **macOS/Linux:**
 ```bash
-nohup node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.17/auto-resume-daemon.js start > /dev/null 2>&1 &
+nohup node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.5.0/auto-resume-daemon.js start > /dev/null 2>&1 &
 ```
 
 **Windows (PowerShell):**

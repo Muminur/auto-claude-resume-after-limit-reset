@@ -10,7 +10,7 @@
     {
       "name": "auto-resume",
       "description": "Detects rate limit stops and automatically resumes Claude Code sessions when limits reset. Works as a background daemon that monitors and auto-continues your interrupted sessions.",
-      "version": "1.4.17",
+      "version": "1.5.0",
       "author": {
         "name": "Muminur",
         "email": "muminur@example.com"

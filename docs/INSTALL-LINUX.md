@@ -23,6 +23,24 @@ The following packages are automatically installed by the plugin but listed here
 
 ## Installation
 
+### One-Line Install (Recommended)
+
+The fastest way to install. Handles xdotool, cloning, and setup automatically:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Muminur/auto-claude-resume-after-limit-reset/main/quick-install.sh | bash
+```
+
+The script will:
+1. Check for Node.js and git
+2. Auto-install `xdotool` if missing (prompts for sudo/pkexec)
+3. Clone the repo, run the installer, and clean up
+4. Verify all hooks are registered
+
+If you prefer manual control, follow the steps below.
+
+---
+
 ### Step 1: Install xdotool (One-Time Requirement)
 
 **Ubuntu/Debian:**
@@ -409,6 +427,19 @@ If using Wayland (default on newer Ubuntu/Fedora), xdotool may not work. Options
 chmod +x ~/.claude/hooks/rate-limit-hook.js
 chmod +x ~/.claude/auto-resume/auto-resume-daemon.js
 ```
+
+---
+
+## Persistence (Reboot / Restart FAQ)
+
+| Scenario | Works? | How |
+|----------|--------|-----|
+| **Close Claude Code, reopen** | Yes | SessionStart hook detects daemon is down and auto-starts it. |
+| **Ubuntu reboot** | Yes | Daemon stops on reboot, but SessionStart hook restarts it when you next open Claude Code. |
+| **Close terminal window** | Yes | Daemon runs in its own process group (`detached: true` + `unref()`), survives terminal close. |
+| **Wayland session** | Partial | Daemon starts fine, but `xdotool` may not send keystrokes. Switch to X11 or use `GDK_BACKEND=x11`. |
+
+No cron jobs, systemd services, or `.bashrc` hacks needed. The SessionStart hook handles everything.
 
 ---
 

@@ -136,6 +136,22 @@ Test desktop notification system:
 
 ## Installation
 
+### One-Line Install (Recommended)
+
+**Linux / macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Muminur/auto-claude-resume-after-limit-reset/main/quick-install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/Muminur/auto-claude-resume-after-limit-reset/main/install.ps1 | iex
+```
+
+That's it! The installer checks dependencies, installs the plugin, and registers all hooks automatically.
+
+### Manual Install
+
 Clone the repository and run the installer:
 
 ```bash
@@ -416,6 +432,17 @@ Enable plugins in `config.json`:
   }
 }
 ```
+
+## Persistence (Reboot / Restart)
+
+| Scenario | Works? | How |
+|----------|--------|-----|
+| **Close Claude Code, reopen** | Yes | SessionStart hook detects daemon isn't running and starts it automatically. |
+| **Ubuntu/Linux reboot** | Yes | Daemon stops on reboot, but auto-starts when you next open Claude Code (via SessionStart hook). |
+| **Close terminal window** | Yes | Daemon runs in its own process group (`detached: true` + `unref()`), survives terminal close. |
+| **macOS reboot** | Yes | Same as Linux — SessionStart hook restarts daemon on next Claude Code launch. |
+
+No cron jobs or manual startup scripts needed. The SessionStart hook handles everything.
 
 ## Troubleshooting
 

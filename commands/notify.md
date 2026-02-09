@@ -12,7 +12,7 @@ Sends a test notification to verify that desktop notifications are configured co
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.4.17/auto-resume-daemon.js notify
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.5.0/auto-resume-daemon.js notify
 ```
 
 **Windows (PowerShell):**
