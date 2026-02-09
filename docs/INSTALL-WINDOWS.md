@@ -19,35 +19,21 @@ The daemon automatically installs these npm packages:
 
 ---
 
-## Method 1: Claude Code Plugin (Recommended)
+## Installation
 
-This is the easiest installation method. Just two steps!
+Clone the repository and run the installer:
 
-### Step 1: Add the Marketplace
-
-Open Claude Code and run:
-```
-/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
-```
-
-### Step 2: Install the Plugin
-
-```
-/plugin install auto-resume
+```powershell
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
+powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-**That's it!** The daemon will automatically start when you open a new Claude Code session.
+**That's it!** The installer registers both hooks, installs dependencies, and the daemon will automatically start when you open a new Claude Code session.
 
 ### First Run Setup
 
-After installation, verify everything works using slash commands in Claude Code:
-
-```
-/auto-resume:status    # Check daemon status
-/auto-resume:test 10   # Test with 10-second countdown
-```
-
-Or using terminal (with auto-discovery):
+After installation, verify everything works:
 ```powershell
 # Find and check daemon status
 $daemon = (Get-ChildItem -Path "$env:USERPROFILE\.claude" -Recurse -Filter "auto-resume-daemon.js" | Select-Object -First 1).FullName
@@ -75,12 +61,12 @@ node $daemon --test 5
 
 ### How It Works
 
-The plugin registers a **SessionStart hook** that:
+The installer registers a **SessionStart hook** that:
 1. Runs automatically when you open Claude Code
 2. Checks if the daemon is already running
 3. Starts the daemon in the background if it's not running
 
-You don't need to configure Windows Startup manually - the plugin handles everything!
+You don't need to configure Windows Startup manually - the installer handles everything!
 
 ### Verify Installation (Optional)
 
@@ -103,31 +89,6 @@ Get-Content "$env:USERPROFILE\.claude\auto-resume\daemon.log" -Tail 20
 # Run a 10-second test countdown
 node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" --test 10
 ```
-
----
-
-## Method 2: Manual Installation (Alternative)
-
-If the plugin method doesn't work, use manual installation.
-
-### Step 1: Clone Repository
-
-```powershell
-git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
-cd auto-claude-resume-after-limit-reset
-```
-
-### Step 2: Run Installer
-
-```powershell
-# Allow script execution (one-time)
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-
-# Run installer
-powershell -ExecutionPolicy Bypass -File install.ps1
-```
-
-The manual installer will set up hooks and optionally configure Windows Startup for you.
 
 ---
 
@@ -325,13 +286,6 @@ wscat -c ws://localhost:3847
 
 ## Troubleshooting
 
-### Plugin Not Showing in /plugin
-
-Ensure you've added the marketplace first:
-```
-/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
-```
-
 ### "Execution Policy" Error
 
 Run PowerShell as Administrator:
@@ -353,7 +307,7 @@ Check if the SessionStart hook is registered:
 Get-Content "$env:USERPROFILE\.claude\settings.json" | Select-String "SessionStart"
 ```
 
-If not present, try reinstalling the plugin.
+If not present, re-run `install.ps1` from the repo directory.
 
 ### Keystrokes Not Being Sent
 
@@ -426,12 +380,6 @@ node "$env:USERPROFILE\.claude\auto-resume\auto-resume-daemon.js" restart
 
 ## Uninstallation
 
-### Plugin Method
-```
-/plugin uninstall auto-resume
-```
-
-### Manual Method
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 ```

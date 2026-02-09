@@ -25,9 +25,8 @@ When you modify any code files (`.js`, `.md` commands, etc.), you MUST:
 
 ### Why This Matters
 
-- The plugin system uses version numbers to detect updates
-- If version doesn't change, `/plugin update` won't see new code
-- Users expect updates to be available immediately after pushing
+- Version numbers track release history
+- Users expect updates to be reflected in the version immediately after pushing
 
 ### When to Use Each Bump Type
 
@@ -54,6 +53,6 @@ When you modify any code files (`.js`, `.md` commands, etc.), you MUST:
 ## Testing Changes
 
 After pushing changes:
-1. Update marketplace cache: `cd ~/.claude/plugins/marketplaces/auto-claude-resume && git pull`
-2. Run: `/plugin update auto-resume@auto-claude-resume`
-3. Verify new version is installed
+1. Pull latest: `cd auto-claude-resume-after-limit-reset && git pull`
+2. Re-run installer: `./install.sh` (or `install.ps1` on Windows)
+3. Verify new version is installed: `cat ~/.claude/auto-resume/package.json | grep version`

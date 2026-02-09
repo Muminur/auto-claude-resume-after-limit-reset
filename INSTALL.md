@@ -1,53 +1,14 @@
 # Installation Guide
 
-This guide covers all installation methods for the Auto Claude Resume plugin.
+This guide covers installation for the Auto Claude Resume plugin.
 
 ---
 
-## Quick Install via Plugin (All Platforms)
+## Quick Install (All Platforms)
 
-Installation is **identical** for Windows, macOS, and Linux. Just two steps!
+Clone the repository and run the installer for your platform.
 
-> **Linux users:** You must install `xdotool` before using the plugin. Without it, the daemon starts but **silently fails to send keystrokes** when the rate limit countdown ends. Run: `sudo apt-get install -y xdotool` (Ubuntu/Debian) or see [Linux Detailed Guide](docs/INSTALL-LINUX.md).
-
-### Step 1: Add the Marketplace
-
-In Claude Code, run:
-```
-/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
-```
-
-### Step 2: Install the Plugin
-
-```
-/plugin install auto-resume
-```
-
-**That's it!** The daemon will automatically start when you open a new Claude Code session.
-
-### Verify Installation (Optional)
-
-**Using slash commands (in Claude Code):**
-```
-/auto-resume:status    # Check daemon status
-/auto-resume:logs      # View recent logs
-```
-
-**Using terminal (auto-discovery):**
-```bash
-# Find and check daemon status
-DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
-node "$DAEMON" status
-
-# View logs
-tail -20 ~/.claude/auto-resume/daemon.log
-```
-
----
-
-## Manual Installation (Alternative)
-
-If you prefer not to use the plugin system, use the platform-specific installers.
+> **Linux users:** You must install `xdotool` for keystroke sending. The installer will offer to install it for you, or run: `sudo apt-get install -y xdotool` (Ubuntu/Debian). See [Linux Detailed Guide](docs/INSTALL-LINUX.md).
 
 ### Windows
 
@@ -99,33 +60,25 @@ xdotool search --class "gnome-terminal"
 
 ## How Auto-Start Works
 
-When you install the plugin, it registers a **SessionStart hook** that:
+The installer registers a **SessionStart hook** that:
 1. Runs automatically when you open Claude Code
 2. Checks if the daemon is already running
 3. Starts the daemon if it's not running
 
-This means you **don't need to configure auto-start manually** - just install the plugin and it works!
+This means you **don't need to configure auto-start manually** - just install and it works!
 
 ---
 
 ## Uninstallation
 
-### Plugin Method (All Platforms)
-
+#### macOS / Linux
+```bash
+./install.sh --uninstall
 ```
-/plugin uninstall auto-resume
-```
-
-### Manual Method
 
 #### Windows
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
-```
-
-#### macOS / Linux
-```bash
-./install.sh --uninstall
 ```
 
 ---

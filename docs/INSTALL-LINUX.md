@@ -21,9 +21,7 @@ The following packages are automatically installed by the plugin but listed here
 
 ---
 
-## Method 1: Claude Code Plugin (Recommended)
-
-This is the easiest installation method. Just two steps!
+## Installation
 
 ### Step 1: Install xdotool (One-Time Requirement)
 
@@ -73,29 +71,25 @@ mkdir -p ~/.claude/auto-resume
 mkdir -p ~/.claude/auto-resume/plugins
 ```
 
-### Step 3: Add the Marketplace
+### Step 3: Clone and Run the Installer
 
-Open Claude Code and run:
-```
-/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
-```
-
-### Step 4: Install the Plugin
-
-```
-/plugin install auto-resume
+```bash
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
+chmod +x install.sh
+./install.sh
 ```
 
-**That's it!** The daemon will automatically start when you open a new Claude Code session.
+**That's it!** The installer registers both hooks, installs dependencies, and optionally sets up a systemd service. The daemon will automatically start when you open a new Claude Code session.
 
 ### How It Works
 
-The plugin registers a **SessionStart hook** that:
+The installer registers a **SessionStart hook** that:
 1. Runs automatically when you open Claude Code
 2. Checks if the daemon is already running
 3. Starts the daemon in the background if it's not running
 
-You don't need to configure systemd or any auto-start mechanism - the plugin handles everything!
+You don't need to configure systemd or any auto-start mechanism manually!
 
 ### Configuration Setup
 
@@ -194,42 +188,6 @@ curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" http://localhost:384
 # Run a 10-second test countdown
 node ~/.claude/auto-resume/auto-resume-daemon.js --test 10
 ```
-
----
-
-## Method 2: Manual Installation (Alternative)
-
-If the plugin method doesn't work, use manual installation.
-
-### Step 1: Install Dependencies
-
-```bash
-# Ubuntu/Debian
-sudo apt update
-sudo apt install xdotool nodejs npm
-
-# Fedora
-sudo dnf install xdotool nodejs npm
-
-# Arch
-sudo pacman -S xdotool nodejs npm
-```
-
-### Step 2: Clone Repository
-
-```bash
-git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
-cd auto-claude-resume-after-limit-reset
-```
-
-### Step 3: Run Installer
-
-```bash
-chmod +x install.sh
-./install.sh
-```
-
-The manual installer will set up hooks and optionally configure systemd for you.
 
 ---
 
@@ -342,13 +300,6 @@ grep -i "plugin\|chokidar" ~/.claude/auto-resume/daemon.log
 node ~/.claude/auto-resume/auto-resume-daemon.js restart
 ```
 
-### Plugin Not Showing in /plugin
-
-Ensure you've added the marketplace first:
-```
-/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
-```
-
 ### "xdotool: command not found" / Sessions Not Resuming
 
 **Symptom:** The daemon starts and counts down correctly, but when the countdown ends, nothing happens. Your session is not resumed. The daemon log (`~/.claude/auto-resume/daemon.log`) shows:
@@ -371,12 +322,8 @@ pkexec apt-get install -y xdotool
 
 # IMPORTANT: Restart the daemon after installing xdotool
 # The running daemon won't detect the new binary automatically
-/auto-resume:stop     # In Claude Code
-/auto-resume:start
-
-# Or from terminal:
-DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
-node "$DAEMON" stop && node "$DAEMON" start
+node ~/.claude/auto-resume/auto-resume-daemon.js stop
+node ~/.claude/auto-resume/auto-resume-daemon.js start
 ```
 
 **Verify the fix:**
@@ -388,7 +335,7 @@ which xdotool
 xdotool search --class "gnome-terminal"
 
 # 3. Run the built-in test (sends keystrokes after countdown)
-/auto-resume:test
+node ~/.claude/auto-resume/auto-resume-daemon.js --test 10
 
 # 4. Check daemon log for success message
 tail -5 ~/.claude/auto-resume/daemon.log
@@ -418,7 +365,7 @@ Check if the SessionStart hook is registered:
 cat ~/.claude/settings.json | grep -A5 "SessionStart"
 ```
 
-If not present, try reinstalling the plugin.
+If not present, re-run `./install.sh` from the repo directory.
 
 ### Keystrokes Not Being Sent
 
@@ -467,17 +414,11 @@ chmod +x ~/.claude/auto-resume/auto-resume-daemon.js
 
 ## Uninstallation
 
-### Plugin Method
-```
-/plugin uninstall auto-resume
-```
-
-### Manual Method
 ```bash
 ./install.sh --uninstall
 ```
 
-### Complete Cleanup
+### Complete Manual Cleanup
 
 ```bash
 # Stop daemon

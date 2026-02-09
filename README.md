@@ -136,43 +136,30 @@ Test desktop notification system:
 
 ## Installation
 
-### Method 1: Claude Code Plugin (Recommended)
-
-**Linux Users: Install xdotool first!**
-
-The plugin requires `xdotool` on Linux to send keystrokes to your terminal. Without it, the daemon will start but **silently fail to resume sessions** — no visible error, just nothing happens when the countdown ends.
+Clone the repository and run the installer:
 
 ```bash
-# Ubuntu/Debian
-sudo apt-get install -y xdotool
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
 
-# Fedora
-sudo dnf install -y xdotool
+# Linux / macOS
+chmod +x install.sh
+./install.sh
 
-# Arch
-sudo pacman -S --noconfirm xdotool
-```
-
-Verify it works:
-```bash
-xdotool search --class "gnome-terminal"   # Should return window IDs
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-**Step 1:** Add the marketplace (run in Claude Code):
-```
-/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
-```
-
-**Step 2:** Install the plugin:
-```
-/plugin install auto-resume
-```
+The installer will:
+- Check and optionally install dependencies (Node.js, xdotool on Linux)
+- Copy scripts to `~/.claude/`
+- Register both SessionStart and Stop hooks in `settings.json`
+- Install npm dependencies
+- Optionally set up a system service (systemd/launchd)
 
 **That's it!** The daemon will automatically start when you open a new Claude Code session.
 
-### Method 2: Manual Installation
-
-If you prefer manual installation, see the platform-specific guides:
+For platform-specific details, see:
 - [Windows Installation](docs/INSTALL-WINDOWS.md)
 - [Linux Installation](docs/INSTALL-LINUX.md)
 - [macOS Installation](docs/INSTALL-MACOS.md)
@@ -432,18 +419,6 @@ Enable plugins in `config.json`:
 
 ## Troubleshooting
 
-### Plugin Not Showing in /plugin
-
-Ensure you've added the marketplace first:
-```
-/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
-```
-
-Then install:
-```
-/plugin install auto-resume
-```
-
 ### Daemon Not Starting
 
 1. Check Node.js version (v16+ required):
@@ -451,9 +426,9 @@ Then install:
    node --version
    ```
 
-2. Check daemon status using slash command:
-   ```
-   /auto-resume:status
+2. Check daemon status:
+   ```bash
+   node ~/.claude/auto-resume/auto-resume-daemon.js status
    ```
 
 3. Check logs:
@@ -493,16 +468,9 @@ sudo pacman -S --noconfirm xdotool
 ```
 
 **After installing, restart the daemon** so it picks up the new binary:
-```
-/auto-resume:stop
-/auto-resume:start
-```
-
-Or from terminal:
 ```bash
-DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
-node "$DAEMON" stop
-node "$DAEMON" start
+node ~/.claude/auto-resume/auto-resume-daemon.js stop
+node ~/.claude/auto-resume/auto-resume-daemon.js start
 ```
 
 **Verify xdotool works with your display:**
@@ -511,7 +479,7 @@ node "$DAEMON" start
 xdotool search --class "gnome-terminal"
 
 # Run the built-in test (sends keystrokes after countdown)
-/auto-resume:test
+node ~/.claude/auto-resume/auto-resume-daemon.js --test 10
 ```
 
 ### macOS: Accessibility Permission
@@ -543,9 +511,9 @@ npm install ws node-notifier --save
 ```
 
 Then restart the daemon:
-```
-/auto-resume:stop
-/auto-resume:start
+```bash
+node ~/.claude/auto-resume/auto-resume-daemon.js stop
+node ~/.claude/auto-resume/auto-resume-daemon.js start
 ```
 
 **Verify dashboard is running:**
@@ -560,20 +528,14 @@ lsof -i :3737 -i :3847 -i :3848
 
 ## Uninstallation
 
+**Linux/macOS:**
+```bash
+./install.sh --uninstall
 ```
-/plugin uninstall auto-resume
-```
-
-Or use the manual uninstall scripts:
 
 **Windows:**
 ```powershell
 .\install.ps1 -Uninstall
-```
-
-**Linux/macOS:**
-```bash
-./install.sh --uninstall
 ```
 
 ## Cross-Platform Support

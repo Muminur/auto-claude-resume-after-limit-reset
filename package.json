@@ -7,7 +7,6 @@
     "auto-resume-daemon": "./auto-resume-daemon.js"
   },
   "scripts": {
-    "postinstall": "node scripts/setup-daemon.js",
     "daemon:start": "node auto-resume-daemon.js start",
     "daemon:stop": "node auto-resume-daemon.js stop",
     "daemon:status": "node auto-resume-daemon.js status",

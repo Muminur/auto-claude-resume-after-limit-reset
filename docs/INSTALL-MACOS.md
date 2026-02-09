@@ -23,33 +23,27 @@ These are installed automatically during setup and do not require manual configu
 
 ---
 
-## Method 1: Claude Code Plugin (Recommended)
+## Installation
 
-This is the easiest installation method. Just two steps!
+Clone the repository and run the installer:
 
-### Step 1: Add the Marketplace
-
-Open Claude Code and run:
-```
-/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
-```
-
-### Step 2: Install the Plugin
-
-```
-/plugin install auto-resume
+```bash
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
+chmod +x install.sh
+./install.sh
 ```
 
-**That's it!** The daemon will automatically start when you open a new Claude Code session.
+**That's it!** The installer registers both hooks, installs dependencies, and the daemon will automatically start when you open a new Claude Code session.
 
 ### How It Works
 
-The plugin registers a **SessionStart hook** that:
+The installer registers a **SessionStart hook** that:
 1. Runs automatically when you open Claude Code
 2. Checks if the daemon is already running
 3. Starts the daemon in the background if it's not running
 
-You don't need to configure launchd or any auto-start mechanism - the plugin handles everything!
+You don't need to configure launchd or any auto-start mechanism manually!
 
 ## Configuration and Setup
 
@@ -222,47 +216,6 @@ node ~/.claude/auto-resume/auto-resume-daemon.js --test 10
 
 ---
 
-## Method 2: Manual Installation (Alternative)
-
-If the plugin method doesn't work, use manual installation.
-
-### Step 1: Install Node.js
-
-**Option A: Homebrew (Recommended)**
-```bash
-brew install node
-```
-
-**Option B: Official Installer**
-Download from https://nodejs.org/
-
-### Step 2: Clone Repository
-
-```bash
-git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
-cd auto-claude-resume-after-limit-reset
-```
-
-### Step 3: Run Installer
-
-```bash
-chmod +x install.sh
-./install.sh
-```
-
-The manual installer will:
-- Install Node.js dependencies (chokidar, node-notifier, ws)
-- Create configuration file at `~/.claude/auto-resume/config.json`
-- Create plugin directory at `~/.claude/auto-resume/plugins/`
-- Set up hooks for automatic daemon startup
-- Optionally configure launchd for background execution
-
-### Step 4: Grant Accessibility Permissions
-
-See the "Grant Accessibility Permissions" section above.
-
----
-
 ## Daemon Management
 
 The daemon auto-starts with Claude Code, but you can manage it manually:
@@ -290,13 +243,6 @@ tail -50 ~/.claude/auto-resume/daemon.log
 ---
 
 ## Troubleshooting
-
-### Plugin Not Showing in /plugin
-
-Ensure you've added the marketplace first:
-```
-/plugin marketplace add https://github.com/Muminur/auto-claude-resume-after-limit-reset
-```
 
 ### Keystrokes Not Being Sent
 
@@ -352,7 +298,7 @@ Check if the SessionStart hook is registered:
 cat ~/.claude/settings.json | grep -A5 "SessionStart"
 ```
 
-If not present, try reinstalling the plugin.
+If not present, re-run `./install.sh` from the repo directory.
 
 ### Dashboard or API Server Not Accessible
 
@@ -424,12 +370,6 @@ ls -la ~/.claude/hooks/rate-limit-hook.js
 
 ## Uninstallation
 
-### Plugin Method
-```
-/plugin uninstall auto-resume
-```
-
-### Manual Method
 ```bash
 ./install.sh --uninstall
 ```

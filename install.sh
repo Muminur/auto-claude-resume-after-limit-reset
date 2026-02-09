@@ -43,11 +43,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_SOURCE="${SCRIPT_DIR}/hooks/rate-limit-hook.js"
 DAEMON_SOURCE="${SCRIPT_DIR}/auto-resume-daemon.js"
 PACKAGE_SOURCE="${SCRIPT_DIR}/package.json"
+ENSURE_DAEMON_SOURCE="${SCRIPT_DIR}/scripts/ensure-daemon-running.js"
 
 # Destination files
 HOOK_DEST="${HOOKS_DIR}/rate-limit-hook.js"
 DAEMON_DEST="${AUTO_RESUME_DIR}/auto-resume-daemon.js"
 PACKAGE_DEST="${AUTO_RESUME_DIR}/package.json"
+ENSURE_DAEMON_DEST="${AUTO_RESUME_DIR}/ensure-daemon-running.js"
 
 # Service files
 SYSTEMD_SERVICE_NAME="claude-auto-resume"
@@ -98,24 +100,61 @@ check_node() {
     if ! command -v node &> /dev/null; then
         log_error "Node.js is not installed"
         echo ""
-        echo "Please install Node.js (v16 or higher):"
-        echo "  - Visit: https://nodejs.org/"
-        echo "  - Or use a package manager:"
+        echo "Node.js (v16 or higher) is required."
+        echo ""
         if [[ "$PLATFORM" == "linux" ]]; then
-            echo "    Ubuntu/Debian: sudo apt install nodejs npm"
-            echo "    RHEL/CentOS: sudo yum install nodejs npm"
-            echo "    Arch: sudo pacman -S nodejs npm"
-        else
-            echo "    macOS: brew install node"
-        fi
-        return 1
-    fi
+            read -p "Install Node.js now? [y/N]: " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                local install_cmd=""
+                if command -v apt-get &> /dev/null; then
+                    install_cmd="apt-get install -y nodejs npm"
+                elif command -v yum &> /dev/null; then
+                    install_cmd="yum install -y nodejs npm"
+                elif command -v dnf &> /dev/null; then
+                    install_cmd="dnf install -y nodejs npm"
+                elif command -v pacman &> /dev/null; then
+                    install_cmd="pacman -S --noconfirm nodejs npm"
+                else
+                    log_error "Could not determine package manager"
+                    return 1
+                fi
 
-    NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-    if [[ "$NODE_VERSION" -lt 16 ]]; then
-        log_warning "Node.js version $(node -v) detected. v16+ recommended."
+                # Try non-interactive sudo first, fall back to pkexec for GUI prompt
+                if sudo -n true 2>/dev/null; then
+                    sudo $install_cmd
+                elif command -v pkexec &> /dev/null; then
+                    log_info "Using graphical authentication prompt..."
+                    pkexec $install_cmd
+                else
+                    sudo $install_cmd
+                fi
+
+                if command -v node &> /dev/null; then
+                    log_success "Node.js installed: $(node -v)"
+                else
+                    log_error "Node.js installation failed"
+                    return 1
+                fi
+            else
+                log_error "Node.js is required. Install manually:"
+                echo "  Visit: https://nodejs.org/"
+                echo "  Or: sudo apt install nodejs npm"
+                return 1
+            fi
+        else
+            echo "Please install Node.js:"
+            echo "  macOS: brew install node"
+            echo "  Or visit: https://nodejs.org/"
+            return 1
+        fi
     else
-        log_success "Node.js $(node -v) detected"
+        NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
+        if [[ "$NODE_VERSION" -lt 16 ]]; then
+            log_warning "Node.js version $(node -v) detected. v16+ recommended."
+        else
+            log_success "Node.js $(node -v) detected"
+        fi
     fi
 
     return 0
@@ -136,17 +175,28 @@ check_xdotool_linux() {
         read -p "Install xdotool now? (requires sudo) [y/N]: " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
+            local install_cmd=""
             if command -v apt-get &> /dev/null; then
-                sudo apt-get install -y xdotool
+                install_cmd="apt-get install -y xdotool"
             elif command -v yum &> /dev/null; then
-                sudo yum install -y xdotool
+                install_cmd="yum install -y xdotool"
             elif command -v dnf &> /dev/null; then
-                sudo dnf install -y xdotool
+                install_cmd="dnf install -y xdotool"
             elif command -v pacman &> /dev/null; then
-                sudo pacman -S --noconfirm xdotool
+                install_cmd="pacman -S --noconfirm xdotool"
             else
                 log_error "Could not determine package manager"
                 return 1
+            fi
+
+            # Try non-interactive sudo first, fall back to pkexec for GUI prompt
+            if sudo -n true 2>/dev/null; then
+                sudo $install_cmd
+            elif command -v pkexec &> /dev/null; then
+                log_info "Using graphical authentication prompt..."
+                pkexec $install_cmd
+            else
+                sudo $install_cmd
             fi
             log_success "xdotool installed"
         else
@@ -285,9 +335,16 @@ copy_files() {
         cp "$PACKAGE_SOURCE" "$PACKAGE_DEST"
     fi
 
+    if [[ -f "$ENSURE_DAEMON_SOURCE" ]]; then
+        cp "$ENSURE_DAEMON_SOURCE" "$ENSURE_DAEMON_DEST"
+    else
+        log_warning "ensure-daemon-running.js not found: $ENSURE_DAEMON_SOURCE"
+    fi
+
     # Make scripts executable
     chmod +x "$HOOK_DEST"
     chmod +x "$DAEMON_DEST"
+    [[ -f "$ENSURE_DAEMON_DEST" ]] && chmod +x "$ENSURE_DAEMON_DEST"
 
     log_success "Files copied and made executable"
 }
@@ -295,84 +352,68 @@ copy_files() {
 update_settings() {
     log_step "Updating Claude settings.json..."
 
-    # Hook configuration
-    local HOOK_CONFIG='{
+    # Hook configuration — uses $HOME for reliable absolute paths
+    local HOOK_CONFIG
+    HOOK_CONFIG=$(cat <<ENDJSON
+{
   "hooks": {
-    "Stop": [
+    "SessionStart": [
       {
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/rate-limit-hook.js",
+            "command": "node $HOME/.claude/auto-resume/ensure-daemon-running.js",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.claude/hooks/rate-limit-hook.js",
             "timeout": 10
           }
         ]
       }
     ]
   }
-}'
+}
+ENDJSON
+)
 
     if [[ ! -f "$SETTINGS_FILE" ]]; then
         # Create new settings file
         log_info "Creating new settings.json..."
         echo "$HOOK_CONFIG" > "$SETTINGS_FILE"
-        log_success "Settings file created"
+        log_success "Settings file created with SessionStart and Stop hooks"
     else
         # Merge with existing settings
         log_info "Merging with existing settings.json..."
 
         if command -v jq &> /dev/null; then
-            # Use jq for proper JSON merging
+            # Use jq for proper JSON merging — combine hook arrays rather than overwrite
             local TEMP_FILE=$(mktemp)
-            jq -s '.[0] * .[1]' "$SETTINGS_FILE" <(echo "$HOOK_CONFIG") > "$TEMP_FILE"
+            jq -s '
+              .[0] as $existing | .[1] as $new |
+              $existing * $new * {
+                hooks: {
+                  SessionStart: (($existing.hooks.SessionStart // []) + ($new.hooks.SessionStart // []) | unique_by(.hooks[0].command)),
+                  Stop: (($existing.hooks.Stop // []) + ($new.hooks.Stop // []) | unique_by(.hooks[0].command))
+                }
+              }
+            ' "$SETTINGS_FILE" <(echo "$HOOK_CONFIG") > "$TEMP_FILE"
             mv "$TEMP_FILE" "$SETTINGS_FILE"
             log_success "Settings merged using jq"
         else
-            # Fallback: manual merge (basic)
-            log_warning "jq not available, using fallback merge"
-
-            # Backup original
+            # Fallback: no jq — let verify_stop_hook and verify_session_start_hook handle it
+            log_warning "jq not available, will verify hooks individually..."
             cp "$SETTINGS_FILE" "${SETTINGS_FILE}.backup"
             log_info "Backup created: ${SETTINGS_FILE}.backup"
-
-            # Check if hooks section already exists
-            if grep -q '"hooks"' "$SETTINGS_FILE"; then
-                log_warning "Hooks section already exists in settings.json"
-                log_warning "Please manually add the Stop hook configuration:"
-                echo ""
-                echo "$HOOK_CONFIG"
-                echo ""
-            else
-                # Simple append (won't work for all JSON structures)
-                local TEMP_FILE=$(mktemp)
-
-                # Remove closing brace, add hooks, re-add closing brace
-                sed '$ d' "$SETTINGS_FILE" > "$TEMP_FILE"
-
-                # Add comma if file has content
-                if [[ -s "$TEMP_FILE" ]]; then
-                    echo "," >> "$TEMP_FILE"
-                fi
-
-                # Add hooks section
-                echo '  "hooks": {' >> "$TEMP_FILE"
-                echo '    "Stop": [' >> "$TEMP_FILE"
-                echo '      {' >> "$TEMP_FILE"
-                echo '        "hooks": [' >> "$TEMP_FILE"
-                echo '          {' >> "$TEMP_FILE"
-                echo '            "type": "command",' >> "$TEMP_FILE"
-                echo '            "command": "node ~/.claude/hooks/rate-limit-hook.js",' >> "$TEMP_FILE"
-                echo '            "timeout": 10' >> "$TEMP_FILE"
-                echo '          }' >> "$TEMP_FILE"
-                echo '        ]' >> "$TEMP_FILE"
-                echo '      }' >> "$TEMP_FILE"
-                echo '    ]' >> "$TEMP_FILE"
-                echo '  }' >> "$TEMP_FILE"
-                echo '}' >> "$TEMP_FILE"
-
-                mv "$TEMP_FILE" "$SETTINGS_FILE"
-                log_success "Settings merged"
-            fi
         fi
     fi
 }
@@ -394,24 +435,59 @@ verify_stop_hook() {
     log_warning "Stop hook missing, adding..."
 
     if command -v jq &> /dev/null; then
-        # Safe append using jq - preserves existing hooks
         local TEMP_FILE=$(mktemp)
-        local HOOK_ENTRY='{
-          "type": "command",
-          "command": "node ~/.claude/hooks/rate-limit-hook.js",
-          "timeout": 10
-        }'
+        local HOOK_ENTRY="{
+          \"type\": \"command\",
+          \"command\": \"node $HOME/.claude/hooks/rate-limit-hook.js\",
+          \"timeout\": 10
+        }"
 
-        # Ensure hooks.Stop array exists and append to it
         jq --argjson entry "$HOOK_ENTRY" '
           .hooks //= {} |
           .hooks.Stop //= [] |
-          .hooks.Stop += [{"hooks": [$entry]}]
+          .hooks.Stop += [{"matcher": "", "hooks": [$entry]}]
         ' "$SETTINGS_FILE" > "$TEMP_FILE" && mv "$TEMP_FILE" "$SETTINGS_FILE"
 
         log_success "Stop hook registered (via jq)"
     else
         log_warning "jq not available. Please manually add the Stop hook to ~/.claude/settings.json"
+        log_info "See installation guide for the JSON snippet to add"
+    fi
+}
+
+verify_session_start_hook() {
+    log_step "Verifying SessionStart hook registration..."
+
+    if [[ ! -f "$SETTINGS_FILE" ]]; then
+        log_warning "Settings file not found, skipping verification"
+        return 0
+    fi
+
+    # Check if ensure-daemon-running.js is already in settings
+    if grep -q "ensure-daemon-running.js" "$SETTINGS_FILE"; then
+        log_success "SessionStart hook already registered"
+        return 0
+    fi
+
+    log_warning "SessionStart hook missing, adding..."
+
+    if command -v jq &> /dev/null; then
+        local TEMP_FILE=$(mktemp)
+        local HOOK_ENTRY="{
+          \"type\": \"command\",
+          \"command\": \"node $HOME/.claude/auto-resume/ensure-daemon-running.js\",
+          \"timeout\": 15
+        }"
+
+        jq --argjson entry "$HOOK_ENTRY" '
+          .hooks //= {} |
+          .hooks.SessionStart //= [] |
+          .hooks.SessionStart += [{"matcher": "", "hooks": [$entry]}]
+        ' "$SETTINGS_FILE" > "$TEMP_FILE" && mv "$TEMP_FILE" "$SETTINGS_FILE"
+
+        log_success "SessionStart hook registered (via jq)"
+    else
+        log_warning "jq not available. Please manually add the SessionStart hook to ~/.claude/settings.json"
         log_info "See installation guide for the JSON snippet to add"
     fi
 }
@@ -427,7 +503,7 @@ install_dependencies() {
     cd "$AUTO_RESUME_DIR"
 
     if command -v npm &> /dev/null; then
-        npm install --production 2>&1 | sed 's/^/  /'
+        npm install --production --ignore-scripts 2>&1 | sed 's/^/  /'
         log_success "Dependencies installed"
 
         # Ensure critical dependencies for dashboard are installed
@@ -575,8 +651,9 @@ install() {
     # Update settings
     update_settings
 
-    # Verify Stop hook registration
+    # Verify hook registrations
     verify_stop_hook
+    verify_session_start_hook
 
     # Install dependencies
     install_dependencies
@@ -647,6 +724,7 @@ uninstall() {
     rm -f "$HOOK_DEST"
     rm -f "$DAEMON_DEST"
     rm -f "$PACKAGE_DEST"
+    rm -f "$ENSURE_DAEMON_DEST"
     rm -rf "$AUTO_RESUME_DIR"
     log_success "Plugin files removed"
 
@@ -657,18 +735,31 @@ uninstall() {
         log_success "Plugin cache removed: $PLUGIN_CACHE_DIR"
     fi
 
-    # Remove hook from settings.json
+    # Remove both hooks from settings.json
     if [[ -f "$SETTINGS_FILE" ]]; then
-        log_step "Removing hook from settings.json..."
+        log_step "Removing hooks from settings.json..."
 
         if command -v jq &> /dev/null; then
             local TEMP_FILE=$(mktemp)
-            jq 'del(.hooks.Stop[] | select(.hooks[]?.command | contains("rate-limit-hook")))' \
-                "$SETTINGS_FILE" > "$TEMP_FILE"
+            jq '
+              # Remove Stop hooks referencing rate-limit-hook
+              (if .hooks.Stop then
+                .hooks.Stop |= map(select(.hooks | all(.command | contains("rate-limit-hook") | not)))
+              else . end) |
+              # Remove SessionStart hooks referencing ensure-daemon-running
+              (if .hooks.SessionStart then
+                .hooks.SessionStart |= map(select(.hooks | all(.command | contains("ensure-daemon-running") | not)))
+              else . end) |
+              # Clean up empty arrays
+              (if .hooks.Stop == [] then del(.hooks.Stop) else . end) |
+              (if .hooks.SessionStart == [] then del(.hooks.SessionStart) else . end) |
+              # Clean up empty hooks object
+              (if .hooks == {} then del(.hooks) else . end)
+            ' "$SETTINGS_FILE" > "$TEMP_FILE"
             mv "$TEMP_FILE" "$SETTINGS_FILE"
-            log_success "Hook removed from settings.json"
+            log_success "Hooks removed from settings.json"
         else
-            log_warning "jq not available, please manually remove the Stop hook from:"
+            log_warning "jq not available, please manually remove the Stop and SessionStart hooks from:"
             echo "  $SETTINGS_FILE"
         fi
     fi

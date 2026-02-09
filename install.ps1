@@ -61,11 +61,13 @@ $SCRIPT_DIR = $PSScriptRoot
 $HOOK_SOURCE = Join-Path $SCRIPT_DIR "hooks\rate-limit-hook.js"
 $DAEMON_SOURCE = Join-Path $SCRIPT_DIR "auto-resume-daemon.js"
 $PACKAGE_JSON_SOURCE = Join-Path $SCRIPT_DIR "package.json"
+$ENSURE_DAEMON_SOURCE = Join-Path $SCRIPT_DIR "scripts\ensure-daemon-running.js"
 
 # Destination files
 $HOOK_DEST = Join-Path $HOOKS_DIR "rate-limit-hook.js"
 $DAEMON_DEST = Join-Path $AUTO_RESUME_DIR "auto-resume-daemon.js"
 $PACKAGE_JSON_DEST = Join-Path $AUTO_RESUME_DIR "package.json"
+$ENSURE_DAEMON_DEST = Join-Path $AUTO_RESUME_DIR "ensure-daemon-running.js"
 $STATUS_FILE = Join-Path $AUTO_RESUME_DIR "status.json"
 $STARTUP_SCRIPT = Join-Path $AUTO_RESUME_DIR "start-daemon.ps1"
 $STARTUP_LINK = Join-Path $STARTUP_FOLDER "ClaudeAutoResume.lnk"
@@ -160,7 +162,7 @@ function Install-Dependencies {
         Set-Location $AUTO_RESUME_DIR
         Write-Info "Running npm install in $AUTO_RESUME_DIR..."
 
-        $npmOutput = npm install --production 2>&1
+        $npmOutput = npm install --production --ignore-scripts 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Success "Dependencies installed successfully"
         } else {
@@ -223,10 +225,16 @@ function Merge-Settings {
         [string]$SettingsPath
     )
 
-    $hookConfig = @{
+    $stopHookConfig = @{
         type = "command"
         command = "node `"$HOOK_DEST`""
         timeout = 10
+    }
+
+    $sessionStartHookConfig = @{
+        type = "command"
+        command = "node `"$ENSURE_DAEMON_DEST`""
+        timeout = 15
     }
 
     if (Test-Path $SettingsPath) {
@@ -264,27 +272,52 @@ function Merge-Settings {
         $settings.hooks.Stop = @()
     }
 
-    # Check if our hook already exists
-    $hookExists = $false
+    $stopHookExists = $false
     foreach ($hookGroup in $settings.hooks.Stop) {
         if ($hookGroup.hooks) {
             foreach ($hook in $hookGroup.hooks) {
                 if ($hook.command -like "*rate-limit-hook.js*") {
-                    $hookExists = $true
-                    # Update the hook
-                    $hook.command = $hookConfig.command
-                    $hook.timeout = $hookConfig.timeout
+                    $stopHookExists = $true
+                    $hook.command = $stopHookConfig.command
+                    $hook.timeout = $stopHookConfig.timeout
                     break
                 }
             }
         }
-        if ($hookExists) { break }
+        if ($stopHookExists) { break }
     }
 
-    # Add new hook if it doesn't exist
-    if (-not $hookExists) {
+    if (-not $stopHookExists) {
         $settings.hooks.Stop += @{
-            hooks = @($hookConfig)
+            matcher = ""
+            hooks = @($stopHookConfig)
+        }
+    }
+
+    # Add or update SessionStart hook
+    if (-not $settings.hooks.ContainsKey("SessionStart")) {
+        $settings.hooks.SessionStart = @()
+    }
+
+    $sessionStartHookExists = $false
+    foreach ($hookGroup in $settings.hooks.SessionStart) {
+        if ($hookGroup.hooks) {
+            foreach ($hook in $hookGroup.hooks) {
+                if ($hook.command -like "*ensure-daemon-running.js*") {
+                    $sessionStartHookExists = $true
+                    $hook.command = $sessionStartHookConfig.command
+                    $hook.timeout = $sessionStartHookConfig.timeout
+                    break
+                }
+            }
+        }
+        if ($sessionStartHookExists) { break }
+    }
+
+    if (-not $sessionStartHookExists) {
+        $settings.hooks.SessionStart += @{
+            matcher = ""
+            hooks = @($sessionStartHookConfig)
         }
     }
 
@@ -456,6 +489,14 @@ function Install-Plugin {
         Write-Success "Installed: $PACKAGE_JSON_DEST"
     }
 
+    # Copy ensure-daemon-running.js if it exists
+    if (Test-Path $ENSURE_DAEMON_SOURCE) {
+        Copy-Item -Path $ENSURE_DAEMON_SOURCE -Destination $ENSURE_DAEMON_DEST -Force
+        Write-Success "Installed: $ENSURE_DAEMON_DEST"
+    } else {
+        Write-Warning "ensure-daemon-running.js not found: $ENSURE_DAEMON_SOURCE"
+    }
+
     Write-Host ""
 
     # Step 3.5: Install npm dependencies
@@ -591,8 +632,8 @@ function Uninstall-Plugin {
 
     Write-Host ""
 
-    # Remove hook from settings.json
-    Write-Info "Removing hook from settings.json..."
+    # Remove hooks from settings.json
+    Write-Info "Removing hooks from settings.json..."
 
     if (Test-Path $SETTINGS_FILE) {
         try {
@@ -600,6 +641,7 @@ function Uninstall-Plugin {
 
             $settings = Get-Content $SETTINGS_FILE -Raw | ConvertFrom-Json
 
+            # Remove Stop hooks referencing rate-limit-hook
             if ($settings.hooks -and $settings.hooks.Stop) {
                 $updatedStopHooks = @()
 
@@ -618,16 +660,45 @@ function Uninstall-Plugin {
                 }
 
                 if ($updatedStopHooks.Count -eq 0) {
-                    # Remove Stop hook section if empty
                     $settings.hooks.PSObject.Properties.Remove("Stop")
                 } else {
                     $settings.hooks.Stop = $updatedStopHooks
                 }
-
-                $settingsJson = $settings | ConvertTo-Json -Depth 10
-                Set-Content -Path $SETTINGS_FILE -Value $settingsJson -Encoding UTF8
-                Write-Success "Removed hook from settings.json"
             }
+
+            # Remove SessionStart hooks referencing ensure-daemon-running
+            if ($settings.hooks -and $settings.hooks.SessionStart) {
+                $updatedSessionStartHooks = @()
+
+                foreach ($hookGroup in $settings.hooks.SessionStart) {
+                    if ($hookGroup.hooks) {
+                        $filteredHooks = $hookGroup.hooks | Where-Object {
+                            $_.command -notlike "*ensure-daemon-running.js*"
+                        }
+
+                        if ($filteredHooks.Count -gt 0) {
+                            $updatedSessionStartHooks += @{
+                                hooks = $filteredHooks
+                            }
+                        }
+                    }
+                }
+
+                if ($updatedSessionStartHooks.Count -eq 0) {
+                    $settings.hooks.PSObject.Properties.Remove("SessionStart")
+                } else {
+                    $settings.hooks.SessionStart = $updatedSessionStartHooks
+                }
+            }
+
+            # Clean up empty hooks object
+            if ($settings.hooks -and $settings.hooks.PSObject.Properties.Count -eq 0) {
+                $settings.PSObject.Properties.Remove("hooks")
+            }
+
+            $settingsJson = $settings | ConvertTo-Json -Depth 10
+            Set-Content -Path $SETTINGS_FILE -Value $settingsJson -Encoding UTF8
+            Write-Success "Removed hooks from settings.json"
         } catch {
             Write-Warning "Failed to update settings.json: $_"
         }
@@ -638,7 +709,7 @@ function Uninstall-Plugin {
     # Remove files
     Write-Info "Removing files..."
 
-    @($HOOK_DEST, $STARTUP_LINK) | ForEach-Object {
+    @($HOOK_DEST, $ENSURE_DAEMON_DEST, $STARTUP_LINK) | ForEach-Object {
         if (Test-Path $_) {
             Remove-Item -Path $_ -Force
             Write-Success "Removed: $_"
