@@ -28,6 +28,8 @@ build/
 # Claude Code local files
 .claude/
 status.json
+CLAUDE.md
+TASKS.md
 
 # Serena IDE
 .serena/
