@@ -12,7 +12,7 @@ Check whether the auto-resume daemon is currently running and view its status.
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.8.0/auto-resume-daemon.js status
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.8.1/auto-resume-daemon.js status
 ```
 
 **Windows (PowerShell):**

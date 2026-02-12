@@ -84,7 +84,8 @@ Add these hooks to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/rate-limit-hook.js"
+            "command": "node ~/.claude/hooks/rate-limit-hook.js",
+            "timeout": 15
           }
         ]
       }
@@ -95,7 +96,8 @@ Add these hooks to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/auto-resume/ensure-daemon-running.js"
+            "command": "node ~/.claude/auto-resume/ensure-daemon-running.js",
+            "timeout": 5
           }
         ]
       }
@@ -104,7 +106,7 @@ Add these hooks to `~/.claude/settings.json`:
 }
 ```
 
-> **Note:** If you already have hooks in `settings.json`, merge the entries into your existing `hooks` object.
+> **Important:** Register each hook exactly **once**. Duplicate Stop hooks cause race conditions on `status.json`. If you already have hooks in `settings.json`, merge the entries into your existing `hooks` object.
 
 ### Step 5: Install systemd Service (Recommended)
 
@@ -402,6 +404,41 @@ systemctl --user restart claude-auto-resume.service
 StartLimitBurst=3
 StartLimitIntervalSec=300
 RestartSec=60
+```
+
+### Rate limit not detected (hook runs but daemon never triggers)
+
+**Cause (v1.8.0 and earlier):** Two bugs in `rate-limit-hook.js` prevented detection:
+
+1. **Unicode apostrophe mismatch** — Claude Code outputs `You\u2019ve` (curly quote U+2019) but the regex character class only contained ASCII apostrophes (U+0027). The pattern never matched the actual message.
+
+2. **Node.js v18+ stream bug** — `fs.createReadStream()` has `Symbol.asyncIterator` in Node v10+, yielding raw Buffer chunks instead of lines. The hook iterated chunks instead of using `readline`, causing `JSON.parse` to fail silently on multi-line JSONL transcripts.
+
+**Fix:** Update to v1.8.1+:
+```bash
+cd auto-claude-resume-after-limit-reset && git pull && ./install.sh
+```
+
+### Duplicate Stop hook causing corrupted status.json
+
+**Symptom:** Daemon log shows `Failed to read status file: Unexpected end of JSON input`.
+
+**Cause:** The Stop hook was registered twice in `~/.claude/settings.json`, creating a race condition where two instances write to `status.json` simultaneously.
+
+**Fix:** Ensure only ONE Stop hook entry exists in `~/.claude/settings.json`:
+```json
+"Stop": [
+  {
+    "matcher": "",
+    "hooks": [
+      {
+        "type": "command",
+        "command": "node ~/.claude/hooks/rate-limit-hook.js",
+        "timeout": 15
+      }
+    ]
+  }
+]
 ```
 
 ### Running on Wayland

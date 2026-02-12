@@ -268,6 +268,39 @@ StartLimitIntervalSec=300
 RestartSec=60
 ```
 
+### Rate limit not detected (hook runs but doesn't trigger daemon)
+
+**Cause (v1.8.0 and earlier):** Two bugs prevented detection:
+
+1. **Unicode apostrophe mismatch** — Claude Code outputs curly quotes (`You\u2019ve`) but the regex only matched ASCII apostrophes. Fixed by using explicit Unicode escapes in the character class.
+
+2. **Node.js v18+ stream iteration bug** — `ReadStream` gained `Symbol.asyncIterator` in Node v10+, which yields Buffer chunks (not lines). The hook iterated raw chunks instead of using `readline`, causing `JSON.parse` to fail silently on multi-line transcripts.
+
+**Fix:** Update to v1.8.1+ which resolves both issues. If you're on an older version:
+```bash
+cd auto-claude-resume-after-limit-reset && git pull && ./install.sh
+```
+
+### Duplicate Stop hook in settings.json
+
+**Cause:** The hook may have been registered twice in `~/.claude/settings.json`, causing race conditions where two hook instances write to `status.json` simultaneously, producing corrupted JSON.
+
+**Fix:** Ensure only ONE Stop hook entry exists:
+```json
+"Stop": [
+  {
+    "matcher": "",
+    "hooks": [
+      {
+        "type": "command",
+        "command": "node ~/.claude/hooks/rate-limit-hook.js",
+        "timeout": 15
+      }
+    ]
+  }
+]
+```
+
 ## Dependencies
 
 - **Node.js** >= 16.0.0

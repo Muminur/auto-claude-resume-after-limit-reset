@@ -24,8 +24,8 @@ const STATUS_FILE = path.join(STATUS_DIR, 'status.json');
 // Rate limit detection patterns - ULTRA SPECIFIC to avoid false positives
 // Must match the EXACT format of Claude Code's rate limit UI message
 // Pattern: "You've hit your limit · resets Xpm (Timezone)"
-// Note: ['''] matches curly quotes and standard apostrophe
-const RATE_LIMIT_COMBINED_PATTERN = /You[''']ve hit your (?:usage )?limit.*?resets\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\)/i;
+// Note: [\u0027\u2018\u2019] matches standard apostrophe, left and right curly quotes
+const RATE_LIMIT_COMBINED_PATTERN = /You[\u0027\u2018\u2019]ve hit your (?:usage )?limit.*?resets\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\)/i;
 
 // Secondary patterns for API errors (not from file contents)
 const API_ERROR_PATTERNS = [
@@ -244,19 +244,13 @@ async function analyzeTranscript(transcriptPath) {
     return null;
   }
 
-  // For testing: check if stream has async iterator (mock streams)
-  // For production: use readline interface
-  let lineIterator;
-  if (fileStream[Symbol.asyncIterator]) {
-    // Mock stream with async iterator - iterate directly
-    lineIterator = fileStream;
-  } else {
-    // Real file stream - use readline
-    lineIterator = readline.createInterface({
-      input: fileStream,
-      crlfDelay: Infinity
-    });
-  }
+  // Always use readline to get line-by-line iteration.
+  // Note: In Node.js v10+, ReadStream has Symbol.asyncIterator but yields
+  // Buffer chunks (not lines), so we must always wrap with readline.
+  const lineIterator = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity
+  });
 
   let rateLimitDetected = false;
   let rateLimitMessage = '';
@@ -453,6 +447,11 @@ function updateStatusFile(rateLimitInfo, sessionId) {
     } catch (err) {
       // Use default status on parse error
     }
+  }
+
+  // Ensure sessions array exists (may be missing from older status files)
+  if (!Array.isArray(status.sessions)) {
+    status.sessions = [];
   }
 
   // Update status with new detection

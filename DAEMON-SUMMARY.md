@@ -163,3 +163,19 @@ node auto-resume-daemon.js monitor     # Run in foreground (for systemd)
 - **Jest tests:** `npx jest` (unit tests for daemon modules)
 - **Live test:** `node auto-resume-daemon.js test` (10s countdown + keystroke injection)
 - **Simulate rate limit:** Write to `status.json` with a future `reset_time`
+
+## Version History
+
+### v1.8.1 — Bug Fixes
+
+**Fixed: Rate limit detection completely broken on Node.js v10+**
+
+Three bugs in `rate-limit-hook.js` prevented rate limit detection:
+
+1. **Unicode apostrophe mismatch** — Claude Code outputs `You\u2019ve` (RIGHT SINGLE QUOTATION MARK, U+2019) but the regex character class `[''']` contained only ASCII apostrophes (U+0027). The pattern never matched the actual rate limit message. Fixed by using explicit Unicode escapes: `[\u0027\u2018\u2019]`.
+
+2. **ReadStream vs readline** — `analyzeTranscript()` checked `fileStream[Symbol.asyncIterator]` to decide whether to use `readline`. In Node.js v10+, `ReadStream` has `Symbol.asyncIterator`, so the code iterated over raw Buffer chunks instead of individual lines. The entire JSONL transcript arrived as one blob, `JSON.parse` failed, and the error was silently caught. Fixed by always using `readline.createInterface()`.
+
+3. **Missing sessions array guard** — When `status.json` lacked a `sessions` array (e.g., only had `last_hook_run`), `updateStatusFile()` crashed on `status.sessions.includes()`. Fixed by initializing `sessions` to `[]` if missing.
+
+**Also fixed:** Documented that duplicate Stop hook registration in `settings.json` causes race conditions (two hook instances writing `status.json` simultaneously, producing corrupted JSON).

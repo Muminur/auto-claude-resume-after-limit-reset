@@ -12,7 +12,7 @@ Clear any stale rate limit status so the daemon can detect fresh rate limits.
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.8.0/auto-resume-daemon.js reset
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.8.1/auto-resume-daemon.js reset
 ```
 
 **Windows (PowerShell):**
