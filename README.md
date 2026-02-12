@@ -1,600 +1,281 @@
-# Auto Claude Resume
+# Auto Claude Resume After Limit Reset
 
-A Claude Code plugin that automatically resumes your sessions when rate limits reset.
-
-## Core Features
-
-- **Automatic Detection**: Detects rate limits without any user intervention
-- **Auto-Resume**: Sends "continue" to your terminal when limits reset
-- **Auto-Start Daemon**: Daemon starts automatically when you open Claude Code
-- **Background Daemon**: Runs silently, always ready to resume your sessions
-- **Cross-Platform**: Windows, Linux, macOS support
-- **Zero Configuration**: Just install and forget
-
-## New Features
-
-### 1. Configuration System (`config-manager.js`)
-Manage all plugin settings via a centralized configuration file:
-- Resume prompt customization
-- Check interval adjustment
-- Log level control
-- Notification preferences
-- WebSocket and REST API configuration
-- Analytics retention settings
-- Plugin directory management
-
-### 2. Desktop Notifications (`notification-manager.js`)
-Receive desktop notifications for all events:
-- Rate limit detection alerts with time remaining
-- Session resume notifications
-- Windows PowerShell fallback for reliability
-- Configurable sound and timeout options
-- Cross-platform support (Windows, macOS, Linux)
-
-### 3. Multiple Status File Watching (`status-watcher.js`)
-Monitor multiple Claude Code sessions simultaneously:
-- Watch multiple status.json files at once
-- Real-time status aggregation
-- Event-based notifications for rate limit changes
-- Automatic session detection and labeling
-- Graceful error handling
-
-### 4. WebSocket Real-time Updates (`websocket-server.js`)
-Real-time data streaming to connected clients:
-- Live session status updates
-- Rate limit countdown timers
-- Analytics data streaming
-- Web GUI dashboard integration
-- Configurable port and auto-reconnection
-
-### 5. REST API Endpoint (`api-server.js`)
-Full-featured HTTP API for external integration:
-- Query daemon status and sessions
-- Manual session resume triggers
-- Configuration management endpoints
-- Analytics data retrieval
-- Daemon control commands
-
-### 6. Rate Limit Analytics & Prediction (`analytics-collector.js`)
-Deep insights into your rate limit patterns:
-- Track rate limit events and resume history
-- Statistical analysis (averages, peaks, trends)
-- Predictive modeling for next rate limit
-- Historical data export and cleanup
-- 30-day data retention (configurable)
-
-### 7. Plugin System (`plugin-loader.js`)
-Extend functionality with custom plugins:
-- Hook system for custom actions
-- Plugins for rate limit events, resume, status changes
-- Plugin discovery and lifecycle management
-- JavaScript plugin development support
-- Example plugins included (log-to-file, slack-notify, console-logger)
-
-### 8. Web GUI Dashboard (`gui/`)
-Beautiful cyberpunk-themed monitoring interface:
-- Real-time session monitoring with countdowns
-- Rate limit analytics and charts
-- Interactive configuration panel
-- Quick action buttons
-- WebSocket-powered live updates
-- Dark theme with neon accents
-
-## New Commands
-
-### Configuration Management
-```
-/auto-resume:config [--get <key>] [--set <key> <value>] [--reset]
-```
-
-Access and modify plugin configuration:
-```bash
-# View all configuration
-/auto-resume:config --get
-
-# View specific setting
-/auto-resume:config --get notifications.enabled
-
-# Update a setting
-/auto-resume:config --set notifications.enabled true
-
-# Reset to defaults
-/auto-resume:config --reset
-```
-
-### Web Dashboard
-```
-/auto-resume:gui
-```
-
-Open the web-based monitoring dashboard. Displays real-time sessions, analytics, and controls.
-
-### View Analytics
-```
-/auto-resume:analytics [--format json|text] [--days 7|30|all]
-```
-
-Display statistics and predictions:
-```bash
-# Show last 7 days of analytics
-/auto-resume:analytics --days 7
-
-# Export as JSON
-/auto-resume:analytics --format json
-```
-
-### Test Notifications
-```
-/auto-resume:notify [--title <text>] [--message <text>]
-```
-
-Test desktop notification system:
-```bash
-# Send test notification
-/auto-resume:notify --title "Test" --message "Notifications working!"
-```
-
-## Installation
-
-### One-Line Install (Recommended)
-
-**Linux / macOS:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/Muminur/auto-claude-resume-after-limit-reset/main/quick-install.sh | bash
-```
-
-**Windows (PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/Muminur/auto-claude-resume-after-limit-reset/main/install.ps1 | iex
-```
-
-That's it! The installer checks dependencies, installs the plugin, and registers all hooks automatically.
-
-### Manual Install
-
-Clone the repository and run the installer:
-
-```bash
-git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
-cd auto-claude-resume-after-limit-reset
-
-# Linux / macOS
-chmod +x install.sh
-./install.sh
-
-# Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -File install.ps1
-```
-
-The installer will:
-- Check and optionally install dependencies (Node.js, xdotool on Linux)
-- Copy scripts to `~/.claude/`
-- Register both SessionStart and Stop hooks in `settings.json`
-- Install npm dependencies
-- Optionally set up a system service (systemd/launchd)
-
-**That's it!** The daemon will automatically start when you open a new Claude Code session.
-
-For platform-specific details, see:
-- [Windows Installation](docs/INSTALL-WINDOWS.md)
-- [Linux Installation](docs/INSTALL-LINUX.md)
-- [macOS Installation](docs/INSTALL-MACOS.md)
+Automatically resumes Claude Code terminal sessions when rate limits reset. No manual intervention needed — install once, forget about it.
 
 ## How It Works
 
 ```
-┌─────────────────┐                     ┌──────────────────┐
-│  SessionStart   │ ──── auto-start ───►│  Daemon Process  │
-│  Hook           │                     │  (if not running)│
-└─────────────────┘                     └──────────────────┘
-
-┌─────────────────┐     writes      ┌──────────────────┐
-│  Rate Limit     │ ───────────────►│  status.json     │
-│  Detection Hook │                 │  (reset_time)    │
-└─────────────────┘                 └────────┬─────────┘
-                                             │ watches
-                                             ▼
-                                    ┌──────────────────┐
-                                    │  Daemon Process  │
-                                    │  (background)    │
-                                    └────────┬─────────┘
-                                             │ when reset_time arrives
-                                             ▼
-                                    ┌──────────────────┐
-                                    │  Send Keystrokes │
-                                    │  to Terminal     │
-                                    └──────────────────┘
+Claude Code hits rate limit
+        ↓
+Stop hook detects "You've hit your limit · resets 8pm (Asia/Dhaka)"
+        ↓
+Writes reset time to ~/.claude/auto-resume/status.json
+        ↓
+Background daemon counts down to reset time
+        ↓
+After reset + 10s safety delay:
+  → Finds terminal windows via xdotool (Linux) / osascript (macOS) / SendKeys (Windows)
+  → Cycles through ALL terminal tabs (Ctrl+PageDown)
+  → Sends: Escape → Ctrl+U → "continue" → Enter
+        ↓
+Claude Code resumes automatically
 ```
 
-### Three Components
+## Features
 
-1. **SessionStart Hook** (`scripts/ensure-daemon-running.js`)
-   - Runs automatically when Claude Code starts
-   - Checks if daemon is running
-   - Starts daemon if not running
+- **Automatic Detection** — Stop hook parses rate limit messages from transcripts
+- **Auto-Resume** — Sends "continue" to ALL terminal tabs when limits reset
+- **Tab Cycling** — Handles multiple Claude Code sessions in gnome-terminal tabs
+- **Background Daemon** — Runs as systemd service (Linux) or background process
+- **Crash-Loop Protection** — `StartLimitBurst=3`, `RestartSec=60`, 30s self-protection
+- **Cross-Platform** — Linux (xdotool), macOS (osascript), Windows (PowerShell)
+- **Zero Configuration** — Just install and forget
+- **Self-Watchdog** — Memory monitoring (exits at 200MB), log rotation (1MB max)
+- **Retry with Backoff** — 4 retries with exponential backoff if resume fails
+- **Transcript Polling** — Redundant fallback detection from JSONL transcripts
 
-2. **Stop Hook** (`hooks/rate-limit-hook.js`)
-   - Runs automatically when Claude Code stops
-   - Analyzes transcript for rate limit messages
-   - Writes detection to `~/.claude/auto-resume/status.json`
+## Quick Install (Linux)
 
-3. **Daemon Service** (`auto-resume-daemon.js`)
-   - Monitors for rate limit detections
-   - Waits until reset time
-   - Sends "continue" to terminal automatically
+```bash
+# 1. Clone
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
+
+# 2. Install dependencies
+npm install
+
+# 3. Install xdotool (required for Linux keystroke injection)
+sudo apt-get install -y xdotool
+
+# 4. Copy files to Claude's directories
+mkdir -p ~/.claude/auto-resume ~/.claude/hooks
+cp auto-resume-daemon.js ~/.claude/auto-resume/
+cp systemd-wrapper.js ~/.claude/auto-resume/
+cp config.json ~/.claude/auto-resume/
+cp hooks/rate-limit-hook.js ~/.claude/hooks/
+cp scripts/ensure-daemon-running.js ~/.claude/auto-resume/
+cp -r node_modules ~/.claude/auto-resume/
+
+# 5. Register hooks in Claude Code settings
+# See INSTALL.md for detailed hook registration
+
+# 6. Install systemd service (recommended for Linux)
+cp claude-auto-resume.service ~/.config/systemd/user/
+# Edit the service file to match your DISPLAY and XAUTHORITY:
+#   Environment="DISPLAY=:1"              # Check with: echo $DISPLAY
+#   Environment="XAUTHORITY=/run/user/1000/gdm/Xauthority"  # Check with: echo $XAUTHORITY
+systemctl --user daemon-reload
+systemctl --user enable --now claude-auto-resume.service
+```
+
+See [INSTALL.md](INSTALL.md) for the complete step-by-step guide.
+
+## Quick Install (macOS / Windows)
+
+```bash
+# macOS
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
+bash install.sh
+
+# Windows (PowerShell as Admin)
+git clone https://github.com/Muminur/auto-claude-resume-after-limit-reset.git
+cd auto-claude-resume-after-limit-reset
+.\install.ps1
+```
+
+Or use the one-liner:
+```bash
+curl -fsSL https://raw.githubusercontent.com/Muminur/auto-claude-resume-after-limit-reset/main/quick-install.sh | bash
+```
+
+## Architecture
+
+### Key Files
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `auto-resume-daemon.js` | `~/.claude/auto-resume/` | Main daemon (60KB) — monitoring, countdown, keystroke injection |
+| `systemd-wrapper.js` | `~/.claude/auto-resume/` | Systemd wrapper — TCP anchor + explicit main() call |
+| `rate-limit-hook.js` | `~/.claude/hooks/` | Stop hook — detects rate limits in transcripts |
+| `ensure-daemon-running.js` | `~/.claude/auto-resume/` | SessionStart hook — auto-starts daemon |
+| `config.json` | `~/.claude/auto-resume/` | Daemon configuration |
+| `claude-auto-resume.service` | `~/.config/systemd/user/` | Systemd service file (Linux) |
+
+### Daemon Commands
+
+```bash
+node ~/.claude/auto-resume/auto-resume-daemon.js help      # Show all commands
+node ~/.claude/auto-resume/auto-resume-daemon.js status     # Check daemon status
+node ~/.claude/auto-resume/auto-resume-daemon.js start      # Start daemon
+node ~/.claude/auto-resume/auto-resume-daemon.js stop       # Stop daemon
+node ~/.claude/auto-resume/auto-resume-daemon.js restart    # Restart daemon
+node ~/.claude/auto-resume/auto-resume-daemon.js test       # Test with 10s countdown
+node ~/.claude/auto-resume/auto-resume-daemon.js logs       # View daemon logs
+node ~/.claude/auto-resume/auto-resume-daemon.js analytics  # View rate limit stats
+node ~/.claude/auto-resume/auto-resume-daemon.js reset      # Clear rate limit status
+```
+
+### Systemd Service (Linux)
+
+The daemon runs as a systemd user service with crash-loop protection:
+
+```ini
+[Unit]
+Description=Claude Code Auto-Resume Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node ~/.claude/auto-resume/systemd-wrapper.js monitor
+Restart=on-failure
+RestartSec=60
+StartLimitBurst=3
+StartLimitIntervalSec=300
+MemoryMax=512M
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+# Service management
+systemctl --user status claude-auto-resume.service   # Check status
+systemctl --user restart claude-auto-resume.service  # Restart
+journalctl --user -u claude-auto-resume.service -f   # Follow logs
+```
+
+### The systemd-wrapper.js
+
+Running Node.js daemons under systemd (`Type=simple`, no TTY) has two gotchas:
+
+1. **Event loop drain** — Without a TTY/stdin, Node's event loop can exit with code 0 before async handles register. The wrapper creates a `net.createServer().listen()` TCP anchor *before* loading the daemon.
+
+2. **require.main guard** — When loaded via `require()`, the daemon's `if (require.main === module)` check skips `main()`. The wrapper calls `daemon.main()` explicitly.
+
+### Terminal Tab Cycling (Linux)
+
+For gnome-terminal with multiple tabs, the daemon:
+
+1. Detects tab count by counting bash children of `gnome-terminal-server`
+2. Sends keystrokes to the active tab
+3. Presses `Ctrl+PageDown` to switch to the next tab
+4. Repeats for all tabs
+
+This ensures ALL Claude Code sessions receive the "continue" command, not just the active tab.
+
+### Window Finding Strategies
+
+The daemon tries 3 strategies in order:
+
+1. **Saved PID** — Walks the process tree from the Claude PID saved in `status.json` to find the terminal window
+2. **Live PID** — Discovers running `claude` processes via `pgrep` and walks their process trees
+3. **All Terminals** — Falls back to finding all terminal windows by WM_CLASS
 
 ## Configuration
 
-Configure the plugin via `~/.claude/auto-resume/config.json`:
+Edit `~/.claude/auto-resume/config.json`:
 
 ```json
 {
   "resumePrompt": "continue",
-  "menuSelection": "1",
   "checkInterval": 5000,
   "logLevel": "info",
-  "notifications": {
-    "enabled": true,
-    "sound": false
+  "notifications": { "enabled": true, "sound": false },
+  "resume": {
+    "postResetDelaySec": 10,
+    "maxRetries": 4,
+    "verificationWindowSec": 90
   },
-  "websocket": {
-    "enabled": false,
-    "port": 3847
-  },
-  "api": {
-    "enabled": false,
-    "port": 3848
-  },
-  "analytics": {
-    "enabled": true,
-    "retentionDays": 30
-  },
-  "watchPaths": [],
-  "plugins": {
-    "enabled": false,
-    "directory": "~/.claude/auto-resume/plugins"
+  "daemon": {
+    "transcriptPolling": true,
+    "maxLogSizeMB": 1
   }
 }
 ```
 
-### Configuration Options
+## Testing
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `resumePrompt` | string | `"continue"` | Text to send when resuming |
-| `menuSelection` | string | `"1"` | Default menu choice |
-| `checkInterval` | number | `5000` | Check status every N milliseconds |
-| `logLevel` | string | `"info"` | Log level: debug, info, warn, error |
-| `notifications.enabled` | boolean | `true` | Enable desktop notifications |
-| `notifications.sound` | boolean | `false` | Play sound with notifications |
-| `websocket.enabled` | boolean | `false` | Enable WebSocket server |
-| `websocket.port` | number | `3847` | WebSocket server port |
-| `api.enabled` | boolean | `false` | Enable REST API server |
-| `api.port` | number | `3848` | REST API server port |
-| `analytics.enabled` | boolean | `true` | Enable analytics collection |
-| `analytics.retentionDays` | number | `30` | Days to keep analytics data |
-| `watchPaths` | array | `[]` | Additional status.json paths to monitor |
-| `plugins.enabled` | boolean | `false` | Enable plugin system |
-| `plugins.directory` | string | `~/.claude/auto-resume/plugins` | Plugin directory path |
+### Systemd Service Tests (24 tests)
 
-## GUI Dashboard
-
-A visually stunning cyberpunk-themed dashboard is available for monitoring and controlling the daemon:
-
-**Quick Start:**
 ```bash
-# Open the dashboard in your browser
-# Windows
-start gui/index.html
-
-# macOS
-open gui/index.html
-
-# Linux
-xdg-open gui/index.html
+bash tests/test-systemd-service.sh
 ```
 
-**Features:**
-- Real-time session monitoring with countdown timers
-- Rate limit analytics and visualization
-- Interactive configuration panel
-- Quick actions (start/stop daemon, manual resume)
-- WebSocket-powered live updates
-- Beautiful dark theme with neon accents
+Tests cover: daemon script integrity, systemd service configuration, runtime behavior, and daemon self-protection.
 
-See [gui/README.md](gui/README.md) for detailed documentation.
+### Simulate a Rate Limit
 
-## Daemon Management
-
-The daemon auto-starts, but you can manage it using slash commands or manually.
-
-### Using Slash Commands (Recommended)
-
-When using Claude Code, the easiest way to manage the daemon is through slash commands:
-
-```
-/auto-resume:status    # Check if daemon is running
-/auto-resume:start     # Start the daemon
-/auto-resume:stop      # Stop the daemon
-/auto-resume:logs      # View daemon logs
-/auto-resume:reset     # Reset rate limit status
-```
-
-### Manual Management (Terminal)
-
-For manual management outside Claude Code, note that the daemon location depends on how you installed:
-
-- **Plugin install**: `~/.claude/plugins/cache/auto-claude-resume/auto-resume/*/auto-resume-daemon.js`
-- **Manual install**: `~/.claude/auto-resume/auto-resume-daemon.js`
-
-**Auto-discovery command (works for both):**
 ```bash
-DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
-node "$DAEMON" status
-node "$DAEMON" stop
-node "$DAEMON" restart
-```
+# Write a fake rate limit (resets in 15 seconds)
+RESET_TIME=$(date -u -d "+15 seconds" +"%Y-%m-%dT%H:%M:%S.000Z")
+cat > ~/.claude/auto-resume/status.json <<EOF
+{
+  "detected": true,
+  "reset_time": "$RESET_TIME",
+  "message": "Test rate limit",
+  "timezone": "Asia/Dhaka"
+}
+EOF
 
-**View logs:**
-```bash
+# Watch the daemon log
 tail -f ~/.claude/auto-resume/daemon.log
 ```
 
-## Rate Limit Detection
+### Jest Unit Tests
 
-When Claude Code shows:
+```bash
+cd ~/.claude/auto-resume && npx jest
 ```
-You've hit your limit · resets 8pm (Asia/Dhaka)
-```
-
-The plugin:
-1. Detects this automatically via the Stop hook
-2. Parses reset time (8pm in Asia/Dhaka timezone)
-3. Daemon displays countdown
-4. At reset time, sends "continue" to your terminal
-5. Session resumes automatically
-
-## Plugin Development
-
-Extend the plugin with custom actions by creating plugins in `~/.claude/auto-resume/plugins/`.
-
-### Plugin Structure
-
-Create a directory for your plugin with an `index.js` file:
-
-```
-~/.claude/auto-resume/plugins/
-├── my-plugin/
-│   └── index.js
-└── another-plugin/
-    └── index.js
-```
-
-### Basic Plugin Example
-
-```javascript
-// ~/.claude/auto-resume/plugins/my-plugin/index.js
-module.exports = {
-  name: 'my-plugin',
-  version: '1.0.0',
-  description: 'My custom auto-resume plugin',
-
-  hooks: {
-    onRateLimitDetected: async (event) => {
-      console.log('Rate limit detected!', event);
-      // Your custom logic here
-    },
-
-    onResumeSent: async (event) => {
-      console.log('Resume sent!', event);
-      // Your custom logic here
-    },
-
-    onStatusChange: async (status) => {
-      console.log('Status changed:', status);
-    },
-
-    onDaemonStart: async () => {
-      console.log('Daemon started');
-    },
-
-    onDaemonStop: async () => {
-      console.log('Daemon stopped');
-    }
-  }
-};
-```
-
-### Available Hooks
-
-| Hook | Triggered | Event Object |
-|------|-----------|--------------|
-| `onRateLimitDetected` | When rate limit is detected | `{ timestamp, resetTime, session }` |
-| `onResumeSent` | After resume prompt is sent | `{ timestamp, session, success }` |
-| `onStatusChange` | When session status changes | `{ sessionId, status, previousStatus }` |
-| `onDaemonStart` | When daemon starts | `{ timestamp }` |
-| `onDaemonStop` | When daemon stops | `{ timestamp }` |
-
-### Example Plugins Included
-
-The plugin system includes example plugins:
-- **console-logger**: Logs events to console
-- **log-to-file**: Writes events to a log file
-- **slack-notify**: Posts notifications to Slack webhook
-
-Enable plugins in `config.json`:
-
-```json
-{
-  "plugins": {
-    "enabled": true,
-    "directory": "~/.claude/auto-resume/plugins"
-  }
-}
-```
-
-## Persistence (Reboot / Restart)
-
-| Scenario | Works? | How |
-|----------|--------|-----|
-| **Close Claude Code, reopen** | Yes | SessionStart hook detects daemon isn't running and starts it automatically. |
-| **Ubuntu/Linux reboot** | Yes | Daemon stops on reboot, but auto-starts when you next open Claude Code (via SessionStart hook). |
-| **Close terminal window** | Yes | Daemon runs in its own process group (`detached: true` + `unref()`), survives terminal close. |
-| **macOS reboot** | Yes | Same as Linux — SessionStart hook restarts daemon on next Claude Code launch. |
-
-No cron jobs or manual startup scripts needed. The SessionStart hook handles everything.
 
 ## Troubleshooting
 
-### Daemon Not Starting
+### Daemon exits immediately under systemd
 
-1. Check Node.js version (v16+ required):
-   ```
-   node --version
-   ```
+**Cause:** A module loaded via `require()` calls `process.exit()` unconditionally.
 
-2. Check daemon status:
-   ```bash
-   node ~/.claude/auto-resume/auto-resume-daemon.js status
-   ```
-
-3. Check logs:
-   ```bash
-   tail -20 ~/.claude/auto-resume/daemon.log
-   ```
-
-### Hook Not Detecting Rate Limits
-
-Verify the hook is registered in Claude Code settings:
-- **Windows:** `Get-Content "$env:USERPROFILE\.claude\settings.json" | Select-String "rate-limit"`
-- **macOS/Linux:** `cat ~/.claude/settings.json | grep rate-limit`
-
-### Linux: xdotool Required
-
-**Symptom:** The daemon starts, detects rate limits, counts down correctly, but when the countdown ends **nothing happens** — your session is not resumed. The daemon log at `~/.claude/auto-resume/daemon.log` shows:
-
-```
-ERROR: xdotool not found. Please install it:
-ERROR: [TEST] Failed to send keystrokes: xdotool not found
-```
-
-**Fix:**
-
+**Fix:** Ensure all hook modules have `if (require.main === module) { main(); }` guard before auto-executing. Check with:
 ```bash
-# Ubuntu/Debian
-sudo apt-get install -y xdotool
-
-# If sudo needs a terminal password (e.g., inside Claude Code CLI), use pkexec for a GUI prompt:
-pkexec apt-get install -y xdotool
-
-# Fedora
-sudo dnf install -y xdotool
-
-# Arch
-sudo pacman -S --noconfirm xdotool
+journalctl --user -u claude-auto-resume.service --since "5 min ago" --no-pager
 ```
 
-**After installing, restart the daemon** so it picks up the new binary:
+### xdotool "Can't open display"
+
+**Cause:** Wrong DISPLAY or missing XAUTHORITY in systemd service.
+
+**Fix:** Check your actual values and update the service file:
 ```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js stop
-node ~/.claude/auto-resume/auto-resume-daemon.js start
+echo "DISPLAY=$DISPLAY"
+echo "XAUTHORITY=$XAUTHORITY"
+# Edit ~/.config/systemd/user/claude-auto-resume.service
+# Then: systemctl --user daemon-reload && systemctl --user restart claude-auto-resume.service
 ```
 
-**Verify xdotool works with your display:**
-```bash
-# Should return one or more window IDs
-xdotool search --class "gnome-terminal"
+### Keystrokes only go to one tab
 
-# Run the built-in test (sends keystrokes after countdown)
-node ~/.claude/auto-resume/auto-resume-daemon.js --test 10
+**Cause:** Old version without tab cycling support.
+
+**Fix:** Update `auto-resume-daemon.js` to the latest version with tab cycling (counts bash children of gnome-terminal-server, uses Ctrl+PageDown to cycle).
+
+### Crash-loop (many restarts)
+
+**Cause:** Missing StartLimitBurst in service file.
+
+**Fix:** Ensure service file has:
+```ini
+StartLimitBurst=3
+StartLimitIntervalSec=300
+RestartSec=60
 ```
 
-### macOS: Accessibility Permission
+## Dependencies
 
-Grant accessibility permission to Node.js:
-1. System Settings > Privacy & Security > Accessibility
-2. Add your Node.js binary (run `which node` to find path)
-
-### Dashboard Not Loading (ERR_CONNECTION_REFUSED)
-
-If `/auto-resume:gui` shows "ERR_CONNECTION_REFUSED" on localhost:3737, the dashboard dependencies may not be installed.
-
-**Automatic Fix (v1.4.13+):**
-The plugin now auto-installs missing dependencies on session start. Simply restart Claude Code.
-
-**Manual Fix:**
-Install dependencies in the plugin cache directory:
-
-**Windows:**
-```powershell
-cd "$env:USERPROFILE\.claude\plugins\cache\auto-claude-resume\auto-resume\*"
-npm install ws node-notifier --save
-```
-
-**macOS/Linux:**
-```bash
-cd ~/.claude/plugins/cache/auto-claude-resume/auto-resume/*/
-npm install ws node-notifier --save
-```
-
-Then restart the daemon:
-```bash
-node ~/.claude/auto-resume/auto-resume-daemon.js stop
-node ~/.claude/auto-resume/auto-resume-daemon.js start
-```
-
-**Verify dashboard is running:**
-```bash
-# Check if ports are listening
-# Windows
-netstat -ano | findstr ":3737 :3847 :3848"
-
-# macOS/Linux
-lsof -i :3737 -i :3847 -i :3848
-```
-
-## Uninstallation
-
-**Linux/macOS:**
-```bash
-./install.sh --uninstall
-```
-
-**Windows:**
-```powershell
-.\install.ps1 -Uninstall
-```
-
-## Cross-Platform Support
-
-This plugin is fully compatible with:
-
-### Windows
-- Auto-resume via PowerShell keystroke injection
-- Desktop notifications via Windows notification system
-- Alternative MessageBox fallback for reliability
-- Full WebSocket and API server support
-
-### macOS
-- Auto-resume via osascript keystroke events
-- Desktop notifications via native macOS notification system
-- Accessibility permission required (automatic prompt)
-- Full feature support
-
-### Linux
-- Auto-resume via xdotool (requires system package)
-- Desktop notifications via notify-send/dbus
-- Full WebSocket and API server support
-- Tested on Ubuntu, Debian, CentOS, Arch
-
-## Requirements
-
-- Claude Code CLI
-- Node.js 16+
-- Linux: xdotool (for keystroke sending)
-- macOS: Accessibility permission for Node.js
-- Optional: npm packages for enhanced features (node-notifier, ws, chokidar)
+- **Node.js** >= 16.0.0
+- **xdotool** (Linux only) — `sudo apt-get install xdotool`
+- **chokidar** — File watching
+- **ws** — WebSocket server
+- **node-notifier** — Desktop notifications
 
 ## License
 
-MIT License
+MIT

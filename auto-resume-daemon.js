@@ -590,20 +590,47 @@ Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
           '  exit 1',
           'fi',
           '',
+          '# Count terminal tabs: each bash child of gnome-terminal = one tab',
+          'TAB_COUNT=1',
+          'for wid in $VALID_WIDS; do',
+          '  WM_CLASS=$(xprop -id "$wid" WM_CLASS 2>/dev/null || true)',
+          '  case "$WM_CLASS" in',
+          '    *gnome-terminal*|*Gnome-terminal*)',
+          '      # Count bash children of gnome-terminal-server for tab count',
+          '      GT_PID=$(xprop -id "$wid" _NET_WM_PID 2>/dev/null | grep -oP "\\d+" || true)',
+          '      if [ -n "$GT_PID" ]; then',
+          '        TC=$(ps --ppid "$GT_PID" -o comm= 2>/dev/null | grep -c bash || true)',
+          '        if [ "$TC" -gt "$TAB_COUNT" ]; then TAB_COUNT=$TC; fi',
+          '      fi',
+          '      ;;',
+          '  esac',
+          'done',
+          '',
           'for wid in $VALID_WIDS; do',
           '  # Activate window (raises and focuses it) with timeout to prevent hangs',
           '  timeout 2 $XDOT windowactivate --sync "$wid" 2>/dev/null || $XDOT windowfocus "$wid" 2>/dev/null',
           '  sleep 0.3',
-          '  # Use XTEST (no --window flag) so keystrokes are not ignored by terminal',
-          '  $XDOT key --clearmodifiers Escape 2>/dev/null',
-          '  sleep 0.3',
-          '  $XDOT key --clearmodifiers ctrl+u 2>/dev/null',
-          '  sleep 0.3',
-          '  $XDOT type --clearmodifiers --delay 50 "continue" 2>/dev/null',
-          '  sleep 0.2',
-          '  $XDOT key Return 2>/dev/null',
-          '  sleep 0.3',
-          '  SENT=$((SENT + 1))',
+          '',
+          '  # Cycle through all tabs in this window and send keystrokes to each',
+          '  TAB_IDX=0',
+          '  while [ "$TAB_IDX" -lt "$TAB_COUNT" ]; do',
+          '    if [ "$TAB_IDX" -gt 0 ]; then',
+          '      # Switch to next tab',
+          '      $XDOT key --clearmodifiers ctrl+Page_Down 2>/dev/null',
+          '      sleep 0.5',
+          '    fi',
+          '    # Use XTEST (no --window flag) so keystrokes are not ignored by terminal',
+          '    $XDOT key --clearmodifiers Escape 2>/dev/null',
+          '    sleep 0.3',
+          '    $XDOT key --clearmodifiers ctrl+u 2>/dev/null',
+          '    sleep 0.3',
+          '    $XDOT type --clearmodifiers --delay 50 "continue" 2>/dev/null',
+          '    sleep 0.2',
+          '    $XDOT key Return 2>/dev/null',
+          '    sleep 0.3',
+          '    SENT=$((SENT + 1))',
+          '    TAB_IDX=$((TAB_IDX + 1))',
+          '  done',
           'done',
           '',
           '# Restore original window focus',
@@ -1179,6 +1206,27 @@ function startTranscriptPolling() {
  * Start daemon
  */
 function startDaemon() {
+  // Crash-loop self-protection: refuse to start if we crashed too recently
+  // This prevents rapid restart loops even without systemd StartLimitBurst
+  const crashLockFile = path.join(BASE_DIR, '.last-start');
+  const MIN_RESTART_INTERVAL_SEC = 30;
+  try {
+    if (fs.existsSync(crashLockFile)) {
+      const lastStart = parseInt(fs.readFileSync(crashLockFile, 'utf8').trim(), 10);
+      const elapsed = Math.floor(Date.now() / 1000) - lastStart;
+      if (elapsed < MIN_RESTART_INTERVAL_SEC) {
+        const wait = MIN_RESTART_INTERVAL_SEC - elapsed;
+        log('warning', `Started ${elapsed}s ago (min interval: ${MIN_RESTART_INTERVAL_SEC}s). Waiting ${wait}s...`);
+        // Sleep instead of exiting — avoids triggering systemd restart
+        const sleepMs = wait * 1000;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, sleepMs);
+      }
+    }
+    fs.writeFileSync(crashLockFile, String(Math.floor(Date.now() / 1000)));
+  } catch (e) {
+    // Non-fatal — continue startup
+  }
+
   // Check if already running
   const existingPid = readPidFile();
   if (existingPid && isProcessRunning(existingPid)) {
@@ -1228,6 +1276,16 @@ function startDaemon() {
   // Start watching
   isRunning = true;
   watchStatusFile();
+
+  // Keep event loop alive when running as a service (no TTY / stdin closed).
+  // Create a server on a random port as a guaranteed event loop anchor.
+  // This is more reliable than setInterval alone in Node 25+.
+  const net = require('net');
+  const keepAlive = net.createServer();
+  keepAlive.listen(0, '127.0.0.1', () => {
+    log('debug', `Keep-alive server on port ${keepAlive.address().port}`);
+  });
+  keepAlive.on('error', () => {}); // Ignore port conflicts
 }
 
 /**
@@ -1736,7 +1794,8 @@ USAGE:
     node auto-resume-daemon.js <command>
 
 COMMANDS:
-    start       Start the daemon in background
+    start       Start the daemon (foreground)
+    monitor     Alias for start (used by systemd)
     stop        Stop the running daemon
     status      Check daemon status
     restart     Restart the daemon
@@ -1811,6 +1870,8 @@ function main() {
 
   switch (command) {
     case 'start':
+    case 'monitor':
+    case '--monitor':
       startDaemon();
       break;
 
@@ -1908,5 +1969,9 @@ function main() {
   }
 }
 
-// Run main
-main();
+// Run main if called directly, allow importing for tests
+if (require.main === module) {
+  main();
+}
+
+module.exports = { main };

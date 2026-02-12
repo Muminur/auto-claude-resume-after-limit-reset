@@ -12,7 +12,7 @@ View or modify the auto-resume daemon configuration settings.
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.7.0/auto-resume-daemon.js config
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.8.0/auto-resume-daemon.js config
 ```
 
 **Windows (PowerShell):**
@@ -96,7 +96,7 @@ notepad "$env:USERPROFILE\.claude\auto-resume\config.json"
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.7.0/auto-resume-daemon.js reset-config
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.8.0/auto-resume-daemon.js reset-config
 ```
 
 **Windows (PowerShell):**
@@ -110,7 +110,7 @@ After editing the config file, restart the daemon:
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.7.0/auto-resume-daemon.js restart
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.8.0/auto-resume-daemon.js restart
 ```
 
 **Windows (PowerShell):**

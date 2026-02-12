@@ -1,0 +1,29 @@
+[Unit]
+Description=Claude Code Auto-Resume Daemon
+After=network.target openclaw-gateway.service
+# Crash-loop prevention: max 3 starts in 5 minutes
+StartLimitBurst=3
+StartLimitIntervalSec=300
+
+[Service]
+Type=simple
+# Pre-start: verify node and dependencies exist before starting
+ExecStartPre=/bin/sh -c 'test -f /home/muminur/.claude/auto-resume/auto-resume-daemon.js && test -d /home/muminur/.claude/auto-resume/node_modules && command -v node >/dev/null'
+ExecStart=/usr/bin/node /home/muminur/.claude/auto-resume/systemd-wrapper.js monitor
+Restart=on-failure
+# 60s between restarts (was 10s, causing rapid crash loops)
+RestartSec=60
+KillMode=process
+# Memory limit (daemon watchdog exits at 200MB, systemd enforces 512MB hard cap)
+MemoryMax=512M
+# Clean environment
+Environment=HOME=/home/muminur
+Environment="PATH=/home/muminur/.local/bin:/home/muminur/.npm-global/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="DISPLAY=:1"
+Environment="XAUTHORITY=/run/user/1000/gdm/Xauthority"
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

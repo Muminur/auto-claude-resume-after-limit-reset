@@ -12,7 +12,7 @@ Shows rate limit statistics, usage patterns, and predictions based on historical
 
 **macOS/Linux:**
 ```bash
-node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.7.0/auto-resume-daemon.js analytics
+node ~/.claude/plugins/cache/auto-claude-resume/auto-resume/1.8.0/auto-resume-daemon.js analytics
 ```
 
 **Windows (PowerShell):**

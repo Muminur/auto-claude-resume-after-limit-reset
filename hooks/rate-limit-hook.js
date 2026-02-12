@@ -601,8 +601,10 @@ async function main() {
   }
 }
 
-// Execute main function
-main();
+// Execute main function only when called directly (not when require()'d)
+if (require.main === module) {
+  main();
+}
 
 // Export functions for testing
 module.exports = {

@@ -11,27 +11,22 @@
           │  Claude Code API │
           │  (Rate Limited)  │
           └────────┬─────────┘
-                   │
                    │ sends rate limit message
                    │ "You've hit your limit · resets 8pm (Asia/Dhaka)"
-                   │
                    ▼
           ┌──────────────────┐
           │ Claude Code CLI  │
           │   (Terminal)     │
           └────────┬─────────┘
-                   │
-                   │ detected by plugin/user
-                   │
+                   │ detected by Stop hook
                    ▼
         ┌─────────────────────────┐
-        │   Plugin / User Script  │
+        │   rate-limit-hook.js    │
+        │  - Reads transcript     │
         │  - Parses reset time    │
         │  - Writes status.json   │
         └────────┬────────────────┘
-                 │
                  │ writes JSON file
-                 │
                  ▼
     ┌────────────────────────────────┐
     │ ~/.claude/auto-resume/         │
@@ -41,9 +36,7 @@
     │     "reset_time": "2026-..."   │
     │   }                            │
     └────────┬───────────────────────┘
-             │
-             │ watched by (1s poll)
-             │
+             │ watched by daemon (5s poll)
              ▼
     ┌───────────────────────────────┐
     │  Auto-Resume Daemon Process   │
@@ -51,693 +44,240 @@
     │  - Countdown timer            │
     │  - Terminal automation        │
     └────────┬──────────────────────┘
-             │
-             │ when reset time arrives
-             │
+             │ when reset time + 10s delay arrives
              ▼
     ┌───────────────────────────────┐
     │  Terminal Automation          │
-    │  - Find Claude windows        │
-    │  - Send "continue" + Enter    │
+    │  Strategy 1: Saved PID        │
+    │  Strategy 2: Live PID         │
+    │  Strategy 3: All Terminals    │
+    │  + Tab cycling (Ctrl+PgDown) │
     └────────┬──────────────────────┘
-             │
-             │ resumes
-             │
+             │ sends Esc + Ctrl+U + "continue" + Enter
              ▼
     ┌───────────────────────────────┐
     │  Claude Code Terminal(s)      │
-    │  - Receives keystroke         │
-    │  - Continues conversation     │
+    │  - All tabs receive keystroke │
+    │  - Sessions resume            │
     └───────────────────────────────┘
 ```
 
 ## Component Architecture
 
-### 1. Status File System
+### 1. systemd Service Stack (Linux)
 
 ```
-┌─────────────────────────────────────────────────────┐
-│              Status File Lifecycle                  │
-└─────────────────────────────────────────────────────┘
+systemd
+  └── systemd-wrapper.js
+        ├── TCP anchor (keeps event loop alive)
+        ├── require('./auto-resume-daemon.js')
+        └── daemon.main() (explicit call)
+              ├── File watcher (polls status.json)
+              ├── Transcript poller (scans JSONL)
+              ├── Countdown timer
+              └── Keystroke injector (xdotool)
+```
 
-[Created]
+#### Why the wrapper?
+
+Without a TTY (stdin = /dev/null under systemd), Node.js event loop can drain before
+async handles register. The wrapper:
+1. Creates `net.createServer().listen()` — synchronous anchor that keeps Node alive
+2. Calls `daemon.main()` explicitly — bypasses `require.main === module` guard
+
+#### require.main Guard
+
+All modules with a `main()` function use:
+```javascript
+if (require.main === module) { main(); }
+```
+
+Without this, `require()`-ing a module that calls `main()` → `process.exit()` will
+kill the parent process. This was the root cause of the daemon crashing under systemd
+(rate-limit-hook.js was reading stdin and calling process.exit(0) when require()'d).
+
+### 2. Status File System
+
+```
+[Created by Stop hook]
     │
-    │ writeRateLimitStatus()
+    │ rate-limit-hook.js writes status.json
     │
     ▼
 ┌─────────────────────────┐
 │  status.json            │
-│  ┌────────────────────┐ │
-│  │ detected: true     │ │
-│  │ reset_time: "..."  │ │
-│  │ message: "..."     │ │
-│  │ timezone: "..."    │ │
-│  └────────────────────┘ │
+│  {                      │
+│    detected: true,      │
+│    reset_time: "...",   │
+│    message: "...",      │
+│    claude_pid: 12345    │
+│  }                      │
 └────────┬────────────────┘
          │
-         │ Daemon watches (fs.statSync + mtime check)
-         │ Every 1 second
+         │ Daemon polls (fs.statSync + mtime check)
+         │ Every 5 seconds (configurable)
          │
          ▼
-    [Detected]
+    [Countdown Active]
          │
-         │ Parse reset_time
-         │ Calculate wait duration
-         │
-         ▼
-  [Countdown Active]
-         │
-         │ Update console every 1s
-         │ "[WAITING] Resuming in HH:MM:SS..."
+         │ Display: "[WAITING] Resuming in HH:MM:SS..."
          │
          ▼
-  [Reset Time Reached]
+    [Reset Time + 10s Delay]
          │
-         │ Send keystrokes
-         │
-         ▼
-┌─────────────────────────┐
-│  fs.unlinkSync()        │
-│  (Status file deleted)  │
-└─────────────────────────┘
+         │ Send keystrokes to all terminal tabs
          │
          ▼
-     [Complete]
+    [Status cleared, back to watching]
 ```
 
-### 2. Daemon Process Management
+### 3. Window Finding Strategies (Linux)
 
 ```
-┌─────────────────────────────────────────────────────┐
-│             Daemon Process Lifecycle                 │
-└─────────────────────────────────────────────────────┘
-
-[Start Command]
+sendContinueToTerminals()
     │
-    │ node auto-resume-daemon.js start
+    ├── Strategy 1: Saved PID
+    │   │
+    │   │ status.json has claude_pid?
+    │   │ Walk process tree: claude → bash → gnome-terminal
+    │   │ Get window ID from PID
+    │   │
+    │   └── Found? → Use this window
     │
-    ▼
-┌──────────────────────────┐
-│ Check Existing Daemon    │
-│ - Read daemon.pid        │
-│ - Check if process alive │
-└──────┬───────────────────┘
-       │
-       ├─ Already Running? → [Exit with error]
-       │
-       └─ Not Running
-           │
-           ▼
-    ┌──────────────────┐
-    │ Initialize       │
-    │ - Create dirs    │
-    │ - Write PID file │
-    │ - Setup signals  │
-    └────┬─────────────┘
-         │
-         ▼
-    ┌─────────────────────┐
-    │ Start File Watcher  │
-    │ setInterval(1000ms) │
-    └────┬────────────────┘
-         │
-         │ Running...
-         │
-         ▼
-    ┌──────────────────────┐
-    │ Receive SIGTERM/INT  │
-    │ - Stop watcher       │
-    │ - Stop countdown     │
-    │ - Remove PID file    │
-    │ - Log shutdown       │
-    └────┬─────────────────┘
-         │
-         ▼
-     [Exit 0]
-```
-
-### 3. File Watching Mechanism
-
-```
-┌─────────────────────────────────────────────────────┐
-│           Status File Watching Loop                  │
-└─────────────────────────────────────────────────────┘
-
-    ┌──────────────────────┐
-    │ setInterval(1s)      │
-    └──────────┬───────────┘
-               │
-               ▼
-    ┌──────────────────────────┐
-    │ fs.existsSync()          │
-    │ Check status.json exists │
-    └──────┬──────────┬────────┘
-           │          │
-    No ◄───┘          └───► Yes
-     │                        │
-     │                        ▼
-     │              ┌─────────────────────┐
-     │              │ fs.statSync()       │
-     │              │ Get mtime           │
-     │              └──────┬──────────────┘
-     │                     │
-     │                     ▼
-     │              ┌─────────────────────┐
-     │              │ Compare mtimes      │
-     │              │ Changed?            │
-     │              └──────┬──────┬───────┘
-     │                     │      │
-     │              No ◄───┘      └───► Yes
-     │               │                   │
-     ▼               │                   ▼
-┌─────────────┐     │        ┌──────────────────────┐
-│ Stop any    │     │        │ fs.readFileSync()    │
-│ countdown   │     │        │ Parse JSON           │
-└─────────────┘     │        └──────┬───────────────┘
-     │              │               │
-     │              │               ▼
-     │              │        ┌──────────────────────┐
-     │              │        │ Validate format      │
-     │              │        │ detected === true?   │
-     │              │        └──────┬──────┬────────┘
-     │              │               │      │
-     │              │        No ◄───┘      └───► Yes
-     │              │         │                   │
-     │              │         │                   ▼
-     │              │         │        ┌─────────────────────┐
-     │              │         │        │ Parse reset_time    │
-     │              │         │        │ new Date(...)       │
-     │              │         │        └──────┬──────────────┘
-     │              │         │               │
-     │              │         │               ▼
-     │              │         │        ┌─────────────────────┐
-     │              │         │        │ Valid Date?         │
-     │              │         │        └──────┬──────┬───────┘
-     │              │         │               │      │
-     │              │         │        No ◄───┘      └───► Yes
-     │              │         │         │                   │
-     │              │         │         │                   ▼
-     │              │         │         │        ┌─────────────────────┐
-     │              │         │         │        │ Start countdown     │
-     │              │         │         │        │ Display timer       │
-     │              │         │         │        └─────────────────────┘
-     │              │         │         │
-     └──────────────┴─────────┴─────────┘
-                    │
-                    ▼
-              [Next iteration]
-```
-
-### 4. Countdown Timer System
-
-```
-┌─────────────────────────────────────────────────────┐
-│            Countdown Timer Logic                     │
-└─────────────────────────────────────────────────────┘
-
-    ┌─────────────────────────┐
-    │ Reset time detected     │
-    │ resetTime = new Date()  │
-    └──────────┬──────────────┘
-               │
-               ▼
-    ┌─────────────────────────────┐
-    │ Start countdown interval    │
-    │ setInterval(1000ms)         │
-    └──────────┬──────────────────┘
-               │
-               ▼
-    ┌──────────────────────────────┐
-    │ Calculate remaining time     │
-    │ remaining = resetTime - now  │
-    └──────────┬───────────────────┘
-               │
-               ▼
-    ┌──────────────────────────────┐
-    │ remaining > 0?               │
-    └──────┬───────────┬───────────┘
-           │           │
-        No │           │ Yes
-           │           │
-           │           ▼
-           │    ┌─────────────────────────────┐
-           │    │ Format time HH:MM:SS        │
-           │    │ Display:                    │
-           │    │ "[WAITING] Resuming in..." │
-           │    └──────────┬──────────────────┘
-           │               │
-           │               │ Continue loop
-           │               │
-           │               └───► [Next second]
-           │
-           ▼
-    ┌───────────────────────────────┐
-    │ Clear countdown interval      │
-    │ Display: "[READY] Reset!"     │
-    └──────────┬────────────────────┘
-               │
-               ▼
-    ┌───────────────────────────────┐
-    │ Wait 5 seconds (buffer)       │
-    │ setTimeout(5000)              │
-    └──────────┬────────────────────┘
-               │
-               ▼
-    ┌───────────────────────────────┐
-    │ Send keystrokes to terminals  │
-    └──────────┬────────────────────┘
-               │
-               ▼
-    ┌───────────────────────────────┐
-    │ Clear status file             │
-    │ fs.unlinkSync()               │
-    └──────────┬────────────────────┘
-               │
-               ▼
-           [Complete]
-```
-
-### 5. Cross-Platform Terminal Automation
-
-```
-┌─────────────────────────────────────────────────────┐
-│         Platform-Specific Keystroke Sending         │
-└─────────────────────────────────────────────────────┘
-
-    ┌─────────────────────┐
-    │ sendKeystrokes()    │
-    └──────────┬──────────┘
-               │
-               ▼
-    ┌─────────────────────┐
-    │ Detect platform     │
-    │ os.platform()       │
-    └──────┬──────────────┘
-           │
-           ├──► Windows (win32)
-           │     │
-           │     ▼
-           │    ┌─────────────────────────────────────┐
-           │    │ PowerShell Script:                  │
-           │    │ Get-Process                         │
-           │    │   | Where MainWindowTitle -match    │
-           │    │     "Claude"                        │
-           │    │ → [System.Windows.Forms.SendKeys]   │
-           │    │     .SendWait('continue')           │
-           │    │     .SendWait('{ENTER}')            │
-           │    └─────────────────┬───────────────────┘
-           │                      │
-           ├──► macOS (darwin)    │
-           │     │                │
-           │     ▼                │
-           │    ┌─────────────────────────────────────┐
-           │    │ osascript:                          │
-           │    │ tell application "System Events"    │
-           │    │   tell process "Terminal"           │
-           │    │     keystroke "continue"            │
-           │    │     keystroke return                │
-           │    │   end tell                          │
-           │    │ end tell                            │
-           │    └─────────────────┬───────────────────┘
-           │                      │
-           └──► Linux             │
-                 │                │
-                 ▼                │
-                ┌─────────────────────────────────────┐
-                │ xdotool:                            │
-                │ # Find terminal windows             │
-                │ xdotool search --class              │
-                │   "gnome-terminal|konsole|..."      │
-                │                                     │
-                │ # Send keystrokes                   │
-                │ xdotool type "continue"             │
-                │ xdotool key Return                  │
-                └─────────────────┬───────────────────┘
-                                  │
-                                  │
-                ┌─────────────────┴───────────────────┐
-                │                                     │
-                ▼                                     ▼
-         [Success: Resolve]              [Error: Reject]
-```
-
-## Data Flow Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Data Flow Overview                          │
-└─────────────────────────────────────────────────────────────────┘
-
-Time: T0 (Rate Limit Hit)
+    ├── Strategy 2: Live PID
+    │   │
+    │   │ pgrep -f "claude"
+    │   │ Walk each process tree to find terminal window
+    │   │
+    │   └── Found? → Use these windows
     │
-    │ User/Plugin detects: "You've hit your limit · resets 8pm (Asia/Dhaka)"
-    │
-    ▼
-┌───────────────────────────────────────┐
-│ parseResetTime(message)               │
-│ → Extract: hour=8pm, timezone=Dhaka   │
-│ → Convert to UTC                      │
-│ → Return: Date object                 │
-└─────────────┬─────────────────────────┘
-              │
-              ▼
-┌───────────────────────────────────────┐
-│ writeRateLimitStatus()                │
-│ {                                     │
-│   detected: true,                     │
-│   reset_time: "2026-01-21T14:00:00Z" │
-│ }                                     │
-│ → Write to: status.json               │
-└─────────────┬─────────────────────────┘
-              │
-              │ File system write
-              │
-Time: T0 + 1s (Daemon detects)
-    │
-    ▼
-┌───────────────────────────────────────┐
-│ Daemon: watchInterval fires           │
-│ → fs.statSync(status.json)            │
-│ → mtime changed? Yes                  │
-│ → fs.readFileSync(status.json)        │
-│ → JSON.parse()                        │
-└─────────────┬─────────────────────────┘
-              │
-              ▼
-┌───────────────────────────────────────┐
-│ Validate status                       │
-│ → detected === true? ✓                │
-│ → reset_time valid? ✓                 │
-│ → resetTime = new Date(reset_time)    │
-└─────────────┬─────────────────────────┘
-              │
-              ▼
-┌───────────────────────────────────────┐
-│ startCountdown(resetTime)             │
-│ → Calculate: remaining = reset - now  │
-│ → Start interval: every 1s            │
-└─────────────┬─────────────────────────┘
-              │
-Time: T0 + 2s to Reset Time
-    │
-    │ Every second:
-    │ ├─ Calculate remaining
-    │ ├─ Format HH:MM:SS
-    │ └─ Display: "[WAITING] Resuming in..."
-    │
-    ▼
-Time: Reset Time (e.g., 8pm Dhaka = 2pm UTC)
-    │
-    ▼
-┌───────────────────────────────────────┐
-│ Countdown: remaining <= 0             │
-│ → Stop interval                       │
-│ → Display: "[READY] Reset!"           │
-└─────────────┬─────────────────────────┘
-              │
-              ▼
-┌───────────────────────────────────────┐
-│ Buffer delay: setTimeout(5000ms)      │
-│ → Wait for API to fully reset         │
-└─────────────┬─────────────────────────┘
-              │
-              ▼
-┌───────────────────────────────────────┐
-│ sendContinueToTerminals()             │
-│ → Detect platform                     │
-│ → Find Claude windows/terminals       │
-│ → Send "continue" + Enter             │
-└─────────────┬─────────────────────────┘
-              │
-              ▼
-┌───────────────────────────────────────┐
-│ clearStatus()                         │
-│ → fs.unlinkSync(status.json)          │
-│ → Log completion                      │
-└─────────────┬─────────────────────────┘
-              │
-              ▼
-Time: Reset + 5s (Complete)
-              │
-              ▼
-          [Session resumed]
+    └── Strategy 3: All Terminals
+        │
+        │ xdotool search --class "gnome-terminal|konsole|xterm|..."
+        │
+        └── Use all matching windows
 ```
 
-## State Machine
+### 4. Tab Cycling (Linux gnome-terminal)
 
 ```
-┌─────────────────────────────────────────────────────┐
-│            Daemon State Machine                      │
-└─────────────────────────────────────────────────────┘
-
-             [START]
-                │
-                │ node auto-resume-daemon.js start
-                │
-                ▼
-         ┌─────────────┐
-         │   INIT      │
-         │  - Create   │
-         │    dirs     │
-         │  - Write    │
-         │    PID      │
-         └──────┬──────┘
-                │
-                ▼
-         ┌─────────────┐
-         │  WATCHING   │◄────────────────┐
-         │  - Poll     │                 │
-         │    status   │                 │
-         │  - Wait for │                 │
-         │    changes  │                 │
-         └──────┬──────┘                 │
-                │                        │
-                │ Status detected        │
-                │                        │
-                ▼                        │
-         ┌─────────────┐                 │
-         │  COUNTDOWN  │                 │
-         │  - Display  │                 │
-         │    timer    │                 │
-         │  - Wait for │                 │
-         │    reset    │                 │
-         └──────┬──────┘                 │
-                │                        │
-                │ Reset time reached     │
-                │                        │
-                ▼                        │
-         ┌─────────────┐                 │
-         │  BUFFERING  │                 │
-         │  - Wait 5s  │                 │
-         └──────┬──────┘                 │
-                │                        │
-                ▼                        │
-         ┌─────────────┐                 │
-         │  SENDING    │                 │
-         │  - Find     │                 │
-         │    windows  │                 │
-         │  - Send     │                 │
-         │    keys     │                 │
-         └──────┬──────┘                 │
-                │                        │
-                ▼                        │
-         ┌─────────────┐                 │
-         │  CLEANUP    │                 │
-         │  - Clear    │                 │
-         │    status   │                 │
-         │  - Log      │                 │
-         └──────┬──────┘                 │
-                │                        │
-                └────────────────────────┘
-                │
-                │ SIGTERM/SIGINT
-                │
-                ▼
-         ┌─────────────┐
-         │  SHUTDOWN   │
-         │  - Stop     │
-         │    watcher  │
-         │  - Remove   │
-         │    PID      │
-         └──────┬──────┘
-                │
-                ▼
-             [EXIT]
-```
-
-## Error Handling Flow
-
-```
-┌─────────────────────────────────────────────────────┐
-│              Error Handling Strategy                 │
-└─────────────────────────────────────────────────────┘
-
 ┌─────────────────────────────┐
-│ Any operation               │
-└──────────┬──────────────────┘
-           │
-           ▼
-    ┌──────────────┐
-    │ try { ... }  │
-    └──────┬───┬───┘
-           │   │
-      OK ◄─┘   └─► Error
-       │              │
-       │              ▼
-       │       ┌──────────────────┐
-       │       │ catch (err) {    │
-       │       │   log('error')   │
-       │       └──────┬───────────┘
-       │              │
-       │              ▼
-       │       ┌──────────────────────┐
-       │       │ Error Type?          │
-       │       └──┬────────┬────────┬─┘
-       │          │        │        │
-       │          │        │        │
-       │   File   │  Parse │  Other │
-       │   Error  │  Error │  Error │
-       │          │        │        │
-       │          ▼        ▼        ▼
-       │   ┌─────────┬─────────┬─────────┐
-       │   │ Ignore  │ Log &   │ Log &   │
-       │   │ (retry  │ Skip    │ Retry   │
-       │   │  next)  │ cycle   │ once    │
-       │   └─────────┴─────────┴─────────┘
-       │          │        │        │
-       └──────────┴────────┴────────┘
-                  │
-                  ▼
-           [Continue operation]
+│ gnome-terminal window       │
+│ ┌─────┬─────┬─────┬─────┐  │
+│ │Tab 1│Tab 2│Tab 3│Tab 4│  │  ← All tabs share one window ID
+│ └─────┴─────┴─────┴─────┘  │
+│                             │
+│ xdotool can only type in    │
+│ the ACTIVE tab              │
+└─────────────────────────────┘
+
+Solution:
+1. Count tabs: ps --ppid <gnome-terminal-server PID> | grep bash | wc -l
+2. For each tab:
+   a. If not first tab: Ctrl+PageDown (switch tab)
+   b. Sleep 0.5s
+   c. Send: Escape → Ctrl+U → "continue" → Enter
+3. Return to original tab: Ctrl+PageDown (wraps around)
 ```
 
-## Performance Characteristics
+### 5. Crash-Loop Protection
 
 ```
-┌─────────────────────────────────────────────────────┐
-│           Performance Profile                        │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│         Crash-Loop Prevention            │
+├──────────────────────────────────────────┤
+│                                          │
+│  systemd level:                          │
+│  ├── StartLimitBurst=3                   │
+│  ├── StartLimitIntervalSec=300           │
+│  └── RestartSec=60                       │
+│  = Max 3 starts in 5 min, 60s between   │
+│                                          │
+│  Daemon level:                           │
+│  ├── .last-start file (30s guard)        │
+│  └── Atomics.wait() for blocking delay   │
+│                                          │
+│  Memory watchdog:                        │
+│  ├── Daemon: exits at 200MB RSS          │
+│  └── systemd: MemoryMax=512M hard cap   │
+│                                          │
+│  Log rotation:                           │
+│  └── daemon.log rotated at 1MB           │
+│                                          │
+└──────────────────────────────────────────┘
+```
 
-Operation              Frequency    CPU      Memory    Disk I/O
-─────────────────────────────────────────────────────────────────
-File stat check        1/second     <0.01%   0 MB      1 read
-Status parse           On change    <0.1%    <1 MB     1 read
-Countdown update       1/second     <0.01%   0 MB      0
-Terminal automation    Once         0.5-1%   <1 MB     0
-Logging                Per event    <0.01%   <1 MB     1 write
+### 6. Cross-Platform Keystroke Sending
 
-Total (idle):          -            <0.1%    30-50 MB  1 read/s
-Total (countdown):     -            <0.2%    30-50 MB  1 read/s
-Total (sending):       -            1-2%     30-50 MB  1 write
+```
+┌──────────────────────────────────────────┐
+│     Platform Detection: os.platform()    │
+├──────────┬──────────┬────────────────────┤
+│ Windows  │ macOS    │ Linux              │
+├──────────┼──────────┼────────────────────┤
+│ PowerShell│osascript│ xdotool            │
+│ SendKeys │keystroke│ type + key          │
+│ Find by  │Find by  │ Find by WM_CLASS   │
+│ title    │process  │ + tab cycling       │
+└──────────┴──────────┴────────────────────┘
+```
 
-Scalability:
-- Linear with status file size (usually <1KB)
-- Constant memory footprint
-- No network I/O
-- Single-threaded event loop
+## Data Flow
+
+```
+Time T0: Rate limit hit
+│
+│ Claude Code shows: "You've hit your limit · resets 8pm (Asia/Dhaka)"
+│ Session stops → Stop hook fires
+│
+▼
+rate-limit-hook.js
+│ Reads transcript JSONL from stdin
+│ Parses reset time → ISO 8601 UTC
+│ Writes status.json
+│
+▼
+Time T0+5s: Daemon detects
+│ fs.statSync() → mtime changed
+│ JSON.parse() → detected: true
+│ Starts countdown
+│
+▼
+Time T0 to Reset: Countdown
+│ Every second: "[WAITING] Resuming in HH:MM:SS..."
+│
+▼
+Time Reset+10s: Send keystrokes
+│ Find terminal windows (3 strategies)
+│ Count gnome-terminal tabs
+│ For each tab: Esc → Ctrl+U → "continue" → Enter
+│ Ctrl+PageDown between tabs
+│
+▼
+Time Reset+15s: Cleanup
+│ Clear status.json
+│ Log completion
+│ Back to watching state
 ```
 
 ## Security Model
 
-```
-┌─────────────────────────────────────────────────────┐
-│              Security Considerations                 │
-└─────────────────────────────────────────────────────┘
+| Attack Vector | Risk | Mitigation |
+|---------------|------|------------|
+| Status file tampering | Medium | File permissions (600), format validation |
+| Keystroke injection | Medium | Fixed prompt text, no user input in keys |
+| PID file race | Low | Atomic operations, process existence check |
+| Log file disclosure | Low | Restrictive permissions, no secrets logged |
+| Privilege escalation | None | Runs as user, no elevated operations |
+| Network attack | None | No network connections (purely local) |
 
-Attack Vector          Risk Level    Mitigation
-──────────────────────────────────────────────────────
-Status file tampering  Medium        • File permissions (600)
-                                    • Format validation
-                                    • Bounds checking
+## Performance
 
-Keystroke injection    Medium        • Only to Claude windows
-                                    • Fixed prompt text
-                                    • No user input in keys
-
-PID file race          Low           • Atomic operations
-                                    • Process existence check
-
-Log file disclosure    Low           • Restrictive permissions
-                                    • No secrets logged
-
-Process hijacking      Low           • PID validation
-                                    • Signal handling
-
-Denial of service      Low           • Single instance check
-                                    • Bounded memory use
-                                    • No recursive operations
-
-Privilege escalation   None          • Runs as user
-                                    • No elevated operations
-```
-
-## Integration Points
-
-```
-┌─────────────────────────────────────────────────────┐
-│          Integration Architecture                    │
-└─────────────────────────────────────────────────────┘
-
-External System         Interface           Data Flow
-──────────────────────────────────────────────────────
-Claude Code Plugin  →  status.json write  →  Daemon
-Terminal Emulator   ←  Keystroke send     ←  Daemon
-File System         ↔  Read/Write         ↔  Daemon
-Operating System    ↔  Signals/Process    ↔  Daemon
-Log Aggregator      ←  daemon.log         ←  Daemon (optional)
-Monitoring System   ←  PID/Status check   ←  Daemon (optional)
-
-Example Integration Flow:
-
-[Claude Plugin]
-     │
-     │ 1. Detect rate limit in API response
-     │
-     ▼
-[parseResetTime()]
-     │
-     │ 2. Convert "8pm (Asia/Dhaka)" → Date object
-     │
-     ▼
-[writeRateLimitStatus()]
-     │
-     │ 3. Write status.json with reset_time
-     │
-     ▼
-[Daemon - watchInterval]
-     │
-     │ 4. Detect file change, parse JSON
-     │
-     ▼
-[Daemon - startCountdown]
-     │
-     │ 5. Display timer, wait for reset
-     │
-     ▼
-[Daemon - sendContinueToTerminals]
-     │
-     │ 6. Send "continue" to terminals
-     │
-     ▼
-[Claude Terminal]
-     │
-     │ 7. Receive keystroke, resume session
-     │
-     ▼
-[Session Resumed]
-```
-
-## Summary
-
-This architecture provides:
-
-1. **Loose Coupling:** File-based communication between components
-2. **Fault Tolerance:** Error handling at every level
-3. **Platform Independence:** Abstracted terminal automation
-4. **Process Isolation:** Single daemon instance enforcement
-5. **Observability:** Comprehensive logging
-6. **Performance:** Minimal resource usage
-7. **Security:** Validation and permission controls
-8. **Maintainability:** Clear state machine and data flow
-
-The system is designed for reliability, with graceful degradation and clear error reporting at every stage.
+| Operation | Frequency | CPU | Memory | Disk I/O |
+|-----------|-----------|-----|--------|----------|
+| File stat check | 1/5s | <0.01% | 0 MB | 1 read |
+| Status parse | On change | <0.1% | <1 MB | 1 read |
+| Countdown update | 1/second | <0.01% | 0 MB | 0 |
+| Tab cycling + keys | Once | 0.5-1% | <1 MB | 0 |
+| Logging | Per event | <0.01% | <1 MB | 1 write |
+| **Total (idle)** | — | <0.1% | 30-50 MB | 1 read/5s |

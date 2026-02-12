@@ -1,42 +1,33 @@
 # Auto-Resume Daemon Usage Guide
 
-The auto-resume daemon is a background service that continuously watches for Claude Code rate limits and automatically resumes sessions when limits reset.
+The auto-resume daemon is a background service that watches for Claude Code rate limits and automatically resumes sessions when limits reset.
 
 ## Daemon Location
 
-The daemon location depends on how you installed:
-
-| Installation Method | Daemon Path |
-|---------------------|-------------|
-| **Plugin** (recommended) | `~/.claude/plugins/cache/auto-claude-resume/auto-resume/*/auto-resume-daemon.js` |
-| **Manual** | `~/.claude/auto-resume/auto-resume-daemon.js` |
-
-**Tip:** Use auto-discovery to find the daemon regardless of installation method:
-```bash
-DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
+After installation, the daemon lives at:
+```
+~/.claude/auto-resume/auto-resume-daemon.js
 ```
 
 ## Quick Start
 
-**Using slash commands (in Claude Code):**
-```
-/auto-resume:start     # Start the daemon
-/auto-resume:status    # Check if it's running
-/auto-resume:stop      # Stop the daemon
-```
-
-**Using terminal (auto-discovery):**
 ```bash
-DAEMON=$(find ~/.claude -name "auto-resume-daemon.js" 2>/dev/null | head -1)
-
 # Start the daemon
-node "$DAEMON" start
+node ~/.claude/auto-resume/auto-resume-daemon.js start
 
-# Check if it's running
-node "$DAEMON" status
+# Check status
+node ~/.claude/auto-resume/auto-resume-daemon.js status
 
 # Stop the daemon
-node "$DAEMON" stop
+node ~/.claude/auto-resume/auto-resume-daemon.js stop
+```
+
+Or use npm scripts from the repo directory:
+```bash
+npm run daemon:start
+npm run daemon:stop
+npm run daemon:status
+npm run daemon:restart
 ```
 
 ## How It Works
@@ -49,15 +40,20 @@ When you start the daemon, it:
 - Logs all activity to `daemon.log`
 
 ### 2. Rate Limit Detection
-The daemon watches `~/.claude/auto-resume/status.json` for changes. When it detects a rate limit:
+The daemon watches `~/.claude/auto-resume/status.json` for changes. When a rate limit is detected:
 - Reads the `reset_time` from the status file
-- Displays a live countdown timer in the console
+- Displays a live countdown timer
 - Logs the detection event
 
+Detection happens via two methods:
+1. **File watching** — Polls `status.json` for changes (primary)
+2. **Transcript polling** — Scans JSONL transcripts for rate limit messages (fallback)
+
 ### 3. Automatic Resume
-When the reset time arrives:
+When the reset time arrives (+ 10s safety delay):
 - Finds all Claude Code terminal windows (cross-platform)
-- Sends "continue" + Enter keystroke to each window
+- Cycles through all gnome-terminal tabs (Linux)
+- Sends Escape + Ctrl+U + "continue" + Enter to each tab
 - Clears the status file
 - Logs the completion
 
@@ -65,27 +61,23 @@ When the reset time arrives:
 
 #### Windows
 - Uses PowerShell to find windows with "Claude" in title
-- Uses `System.Windows.Forms.SendKeys` to send keystrokes
+- Uses `System.Windows.Forms.SendKeys` for keystroke injection
 - No additional dependencies required
 
 #### macOS
 - Uses osascript to find Terminal/iTerm/iTerm2 windows
 - Uses AppleScript `keystroke` commands
-- Built into macOS, no installation needed
+- Requires Accessibility permission
 
 #### Linux
 - Uses xdotool to find terminal windows
 - Searches for common terminal emulators (gnome-terminal, konsole, xterm, etc.)
-- **Requires xdotool installation:**
+- Cycles through gnome-terminal tabs via `Ctrl+PageDown`
+- **Requires xdotool:**
   ```bash
-  # Ubuntu/Debian
-  sudo apt-get install xdotool
-
-  # RHEL/CentOS
-  sudo yum install xdotool
-
-  # Arch
-  sudo pacman -S xdotool
+  sudo apt-get install xdotool  # Ubuntu/Debian
+  sudo dnf install xdotool      # Fedora
+  sudo pacman -S xdotool        # Arch
   ```
 
 ## Status File Format
@@ -103,88 +95,27 @@ The daemon expects a JSON status file at `~/.claude/auto-resume/status.json`:
 
 ### Required Fields
 - `detected` (boolean): Must be `true` to trigger countdown
-- `reset_time` (ISO 8601 string): When the rate limit resets (in UTC or with timezone)
+- `reset_time` (ISO 8601 string): When the rate limit resets
 
 ### Optional Fields
-- `message` (string): The original rate limit message (for logging)
-- `timezone` (string): The timezone name (for logging)
+- `message` (string): The original rate limit message
+- `timezone` (string): The timezone name
+- `timestamp` (string): When the status was written
 
-## Commands
+## All Commands
 
-### Start Daemon
 ```bash
-node auto-resume-daemon.js start
+node auto-resume-daemon.js start       # Start daemon
+node auto-resume-daemon.js stop        # Stop daemon (graceful SIGTERM)
+node auto-resume-daemon.js status      # Check if running + current status
+node auto-resume-daemon.js restart     # Stop then start
+node auto-resume-daemon.js monitor     # Run in foreground (for systemd)
+node auto-resume-daemon.js test        # Test with 10s countdown
+node auto-resume-daemon.js help        # Show all commands
+node auto-resume-daemon.js logs        # View daemon log
+node auto-resume-daemon.js analytics   # View rate limit statistics
+node auto-resume-daemon.js reset       # Clear rate limit status
 ```
-Starts the daemon in the foreground. The daemon will:
-- Display a banner
-- Show the PID and log file location
-- Begin watching for status changes
-- Display countdown timers when rate limits are detected
-
-**Output:**
-```
-  ╔═══════════════════════════════════════════════════════════════╗
-  ║      Claude Code Auto-Resume Daemon v1.0.0                 ║
-  ║      Background service for automatic session resume          ║
-  ╚═══════════════════════════════════════════════════════════════╝
-
-[SUCCESS] Daemon started (PID: 12345)
-[INFO] Log file: /home/user/.claude/auto-resume/daemon.log
-[INFO] PID file: /home/user/.claude/auto-resume/daemon.pid
-[SUCCESS] Watching status file for changes...
-[INFO] Status file: /home/user/.claude/auto-resume/status.json
-[INFO] Press Ctrl+C to stop daemon
-```
-
-### Stop Daemon
-```bash
-node auto-resume-daemon.js stop
-```
-Gracefully stops the running daemon:
-- Sends SIGTERM signal
-- Waits up to 5 seconds for graceful shutdown
-- Force kills if necessary
-- Removes PID file
-
-**Output:**
-```
-[INFO] Stopping daemon (PID: 12345)...
-[SUCCESS] Daemon stopped successfully
-```
-
-### Check Status
-```bash
-node auto-resume-daemon.js status
-```
-Checks if the daemon is running and shows its status:
-- Reads the PID file
-- Verifies the process is running
-- Displays current status file contents (if available)
-
-**Output (running):**
-```
-[SUCCESS] Daemon is running (PID: 12345)
-[INFO] Status: {
-  "detected": true,
-  "reset_time": "2026-01-21T20:00:00.000Z",
-  "message": "You've hit your limit · resets 8pm (Asia/Dhaka)",
-  "timezone": "Asia/Dhaka"
-}
-```
-
-**Output (not running):**
-```
-[INFO] Daemon is not running (no PID file)
-```
-
-### Restart Daemon
-```bash
-node auto-resume-daemon.js restart
-```
-Stops and then starts the daemon:
-- Calls stop command
-- Waits 1 second
-- Calls start command
 
 ## Process Management
 
@@ -199,282 +130,132 @@ Contains the process ID of the running daemon. Used to:
 ### Log File
 Location: `~/.claude/auto-resume/daemon.log`
 
-Contains timestamped log entries:
 ```
 [2026-01-21T14:30:00.000Z] INFO: Daemon started (PID: 12345)
 [2026-01-21T14:30:00.100Z] INFO: Watching status file for changes...
 [2026-01-21T14:32:15.500Z] WARNING: Rate limit detected!
 [2026-01-21T14:32:15.501Z] INFO: Reset time: 1/21/2026, 8:00:00 PM
-[2026-01-21T20:00:05.000Z] SUCCESS: Sent: 'continue' + Enter to terminal windows
+[2026-01-21T20:00:05.000Z] SUCCESS: Sent to 4 window(s) (strategy: saved-pid)
 [2026-01-21T20:00:05.001Z] SUCCESS: Auto-resume completed!
 ```
 
+Log is auto-rotated at 1MB (configurable via `daemon.maxLogSizeMB`).
+
 ### Graceful Shutdown
-The daemon handles these signals:
+The daemon handles:
 - `SIGINT` (Ctrl+C): Graceful shutdown
 - `SIGTERM`: Graceful shutdown
 - `uncaughtException`: Logs error and shuts down
 
-On shutdown, the daemon:
+On shutdown:
 1. Stops the file watcher
 2. Stops any active countdown
 3. Removes the PID file
 4. Logs shutdown event
 5. Exits cleanly
 
-## Integration with Claude Code Plugin
+## Running as systemd Service (Linux)
 
-To integrate the daemon with your Claude Code plugin, create a status writer:
+The recommended way to run the daemon on Linux. See [INSTALL.md](../INSTALL.md#step-5-install-systemd-service-recommended) for setup.
 
-```javascript
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-
-function writeRateLimitStatus(resetTime, message, timezone) {
-  const statusDir = path.join(os.homedir(), '.claude', 'auto-resume');
-  const statusFile = path.join(statusDir, 'status.json');
-
-  // Ensure directory exists
-  if (!fs.existsSync(statusDir)) {
-    fs.mkdirSync(statusDir, { recursive: true });
-  }
-
-  // Write status
-  const status = {
-    detected: true,
-    reset_time: resetTime.toISOString(),
-    message: message,
-    timezone: timezone,
-    timestamp: new Date().toISOString()
-  };
-
-  fs.writeFileSync(statusFile, JSON.stringify(status, null, 2));
-  console.log('Rate limit status written to:', statusFile);
-}
-
-// Example usage when rate limit detected
-const resetTime = new Date('2026-01-21T20:00:00.000Z');
-writeRateLimitStatus(
-  resetTime,
-  "You've hit your limit · resets 8pm (Asia/Dhaka)",
-  "Asia/Dhaka"
-);
+### Service Commands
+```bash
+systemctl --user status claude-auto-resume.service    # Check status
+systemctl --user restart claude-auto-resume.service   # Restart
+systemctl --user stop claude-auto-resume.service      # Stop
+journalctl --user -u claude-auto-resume.service -f    # Follow logs
 ```
+
+### systemd-wrapper.js
+
+The service uses `systemd-wrapper.js` instead of running the daemon directly. This wrapper:
+
+1. Creates a TCP server anchor to keep Node.js event loop alive (no TTY under systemd)
+2. Calls `daemon.main()` explicitly (bypasses `require.main === module` guard)
+
+### Key Service File Settings
+
+```ini
+Environment="DISPLAY=:1"                    # Must match your X11 display
+Environment="XAUTHORITY=/run/user/1000/gdm/Xauthority"  # Must match your session
+StartLimitBurst=3                           # Max 3 starts in 5 minutes
+RestartSec=60                               # 60s between restarts
+MemoryMax=512M                              # Hard memory cap
+```
+
+## Window Finding Strategies (Linux)
+
+The daemon tries 3 strategies in order:
+
+1. **Saved PID** — Walks the process tree from the Claude PID saved in `status.json`
+2. **Live PID** — Discovers running `claude` processes via `pgrep`
+3. **All Terminals** — Falls back to all terminal windows by WM_CLASS
+
+### Terminal Tab Cycling
+
+For gnome-terminal with multiple tabs:
+1. Counts tabs by counting bash children of `gnome-terminal-server`
+2. Sends keystrokes to the active tab
+3. Presses `Ctrl+PageDown` to switch to next tab
+4. Repeats for all tabs
 
 ## Troubleshooting
 
 ### Daemon Won't Start
-**Problem:** "Daemon is already running"
-
-**Solution:**
 ```bash
-# Check if it's actually running
+# Check if already running
 node auto-resume-daemon.js status
 
-# If stale, remove PID file
+# If stale PID file, remove it
 rm ~/.claude/auto-resume/daemon.pid
 
 # Try starting again
 node auto-resume-daemon.js start
 ```
 
+### Daemon Exits Under systemd
+Check for modules calling `process.exit()` without `require.main` guard:
+```bash
+journalctl --user -u claude-auto-resume.service --since "5 min ago" --no-pager
+```
+
 ### Status File Not Detected
-**Problem:** Daemon runs but doesn't detect status changes
-
-**Solution:**
-1. Check status file location:
-   ```bash
-   ls -la ~/.claude/auto-resume/status.json
-   ```
-
-2. Verify file format:
-   ```bash
-   cat ~/.claude/auto-resume/status.json
-   ```
-
-3. Check daemon logs:
-   ```bash
-   tail -f ~/.claude/auto-resume/daemon.log
-   ```
+```bash
+ls -la ~/.claude/auto-resume/status.json
+cat ~/.claude/auto-resume/status.json
+tail -f ~/.claude/auto-resume/daemon.log
+```
 
 ### Keystrokes Not Sent (Linux)
-**Problem:** Countdown completes but "continue" not sent
-
-**Solution:**
 ```bash
-# Check if xdotool is installed
+# Check xdotool
 which xdotool
 
-# Install if missing
-sudo apt-get install xdotool  # Ubuntu/Debian
+# Check DISPLAY
+echo $DISPLAY
+
+# Test finding windows
+xdotool search --class "gnome-terminal"
 ```
 
-### Multiple Windows Behavior
-**Problem:** "continue" sent to all terminal windows
-
-**Behavior:** This is intentional. The daemon finds all terminal windows that might have Claude Code running and sends the keystroke to each.
-
-**Note:** If you have multiple Claude Code sessions, they will all receive the "continue" command.
-
-## Advanced Usage
-
-### Custom Status File Location
-Modify the daemon source to use a different status file:
-
-```javascript
-// Change this line near the top of auto-resume-daemon.js
-const STATUS_FILE = path.join(HOME_DIR, '.claude', 'auto-resume', 'status.json');
-```
-
-### Running as System Service
-
-#### Linux (systemd)
-Create `/etc/systemd/system/claude-resume-daemon.service`:
-
-```ini
-[Unit]
-Description=Claude Code Auto-Resume Daemon
-After=network.target
-
-[Service]
-Type=simple
-User=your-username
-WorkingDirectory=/path/to/AutoClaudeResume
-ExecStart=/usr/bin/node /path/to/AutoClaudeResume/auto-resume-daemon.js start
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Then:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable claude-resume-daemon
-sudo systemctl start claude-resume-daemon
-sudo systemctl status claude-resume-daemon
-```
-
-#### macOS (launchd)
-Create `~/Library/LaunchAgents/com.claude.resume-daemon.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.claude.resume-daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/node</string>
-        <string>/path/to/AutoClaudeResume/auto-resume-daemon.js</string>
-        <string>start</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardErrorPath</key>
-    <string>/tmp/claude-resume-daemon.err</string>
-    <key>StandardOutPath</key>
-    <string>/tmp/claude-resume-daemon.out</string>
-</dict>
-</plist>
-```
-
-Then:
-```bash
-launchctl load ~/Library/LaunchAgents/com.claude.resume-daemon.plist
-launchctl start com.claude.resume-daemon
-launchctl list | grep claude
-```
-
-#### Windows (Task Scheduler)
-1. Open Task Scheduler
-2. Create Basic Task
-3. Name: "Claude Resume Daemon"
-4. Trigger: At startup
-5. Action: Start a program
-   - Program: `C:\Program Files\nodejs\node.exe`
-   - Arguments: `C:\path\to\AutoClaudeResume\auto-resume-daemon.js start`
-6. Settings: Run whether user is logged on or not
-
-### Multiple Daemon Instances
-To run multiple daemons watching different status files:
-
-1. Copy the daemon file:
-   ```bash
-   cp auto-resume-daemon.js auto-resume-daemon-2.js
-   ```
-
-2. Modify the paths in the copy:
-   ```javascript
-   const BASE_DIR = path.join(HOME_DIR, '.claude', 'auto-resume-2');
-   ```
-
-3. Start both:
-   ```bash
-   node auto-resume-daemon.js start
-   node auto-resume-daemon-2.js start
-   ```
-
-## NPM Scripts
-
-If you've installed via npm, you can use these shortcuts:
-
-```bash
-# Start daemon
-npm run daemon:start
-
-# Stop daemon
-npm run daemon:stop
-
-# Check status
-npm run daemon:status
-
-# Restart daemon
-npm run daemon:restart
-```
+### xdotool on Wayland
+xdotool requires X11. Options:
+1. Switch to X11 session at login
+2. Run under XWayland: `GDK_BACKEND=x11 gnome-terminal`
+3. Use `ydotool` (requires additional setup)
 
 ## Security Considerations
 
-1. **PID File Access:** The PID file is world-readable. Anyone can see the daemon is running.
-
-2. **Log File:** The log file contains rate limit messages. Ensure proper permissions:
-   ```bash
-   chmod 600 ~/.claude/auto-resume/daemon.log
-   ```
-
-3. **Keystroke Injection:** The daemon injects keystrokes into terminal windows. This could be a security concern if malicious status files are written.
-
-4. **Status File Validation:** The daemon validates the status file format but not the authenticity. Consider adding checksums or signatures for production use.
+1. **Status file** — No authentication. Anyone with write access can trigger a resume. Restrict permissions: `chmod 600 ~/.claude/auto-resume/status.json`
+2. **Log file** — Contains rate limit messages. Restrict: `chmod 600 ~/.claude/auto-resume/daemon.log`
+3. **Keystroke injection** — Sends to all matching terminal windows. Fixed prompt text only.
+4. **No network** — Daemon is purely local, no network connections.
 
 ## Performance
 
-- **CPU Usage:** Minimal (<0.1% on modern systems)
-- **Memory:** ~30-50 MB Node.js process
-- **Disk I/O:** Status file checked every 1 second (negligible)
-- **Network:** None (local file watching only)
-
-## Limitations
-
-1. **Single Status File:** Watches only one status file at a time
-2. **No Authentication:** Anyone can write to the status file
-3. **Window Detection:** May send to non-Claude terminal windows
-4. **No Notification:** Operates silently unless logs are monitored
-5. **Platform-Specific:** Terminal detection methods vary by OS
-
-## Future Enhancements
-
-Possible improvements for future versions:
-- Multiple status file watching
-- WebSocket-based status updates
-- Desktop notifications
-- Configuration file support
-- Auto-start on system boot
-- Status API endpoint
-- Plugin system for custom actions
-- Rate limit prediction/analytics
+| Metric | Value |
+|--------|-------|
+| CPU (idle) | <0.1% |
+| Memory | 30-50 MB |
+| Disk I/O | 1 stat call per 5 seconds |
+| Network | None |
