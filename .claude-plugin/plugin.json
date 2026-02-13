@@ -1,0 +1,33 @@
+{
+  "name": "auto-resume",
+  "version": "1.8.1",
+  "description": "Automatically resume Claude Code sessions when rate limits reset",
+  "author": {
+    "name": "Muminur",
+    "email": "muminur@example.com"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/ensure-daemon-running.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/rate-limit-hook.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

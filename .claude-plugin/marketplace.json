@@ -1,0 +1,29 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "auto-claude-resume",
+  "description": "Automatically resume Claude Code sessions when rate limits reset",
+  "owner": {
+    "name": "Muminur",
+    "email": "muminur@example.com"
+  },
+  "plugins": [
+    {
+      "name": "auto-resume",
+      "description": "Detects rate limit stops and automatically resumes Claude Code sessions when limits reset. Works as a background daemon that monitors and auto-continues your interrupted sessions.",
+      "version": "1.8.1",
+      "author": {
+        "name": "Muminur",
+        "email": "muminur@example.com"
+      },
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/Muminur/auto-claude-resume-after-limit-reset",
+      "tags": [
+        "rate-limit",
+        "auto-resume",
+        "daemon",
+        "productivity"
+      ]
+    }
+  ]
+}

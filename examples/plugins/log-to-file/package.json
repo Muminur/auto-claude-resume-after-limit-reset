@@ -1,0 +1,14 @@
+{
+  "name": "auto-resume-log-to-file",
+  "version": "1.0.0",
+  "description": "Logs all auto-resume events to a file",
+  "main": "index.js",
+  "keywords": [
+    "claude-code",
+    "auto-resume",
+    "plugin",
+    "logging"
+  ],
+  "author": "",
+  "license": "MIT"
+}
