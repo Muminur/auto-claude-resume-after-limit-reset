@@ -1,0 +1,48 @@
+{
+  "name": "auto-resume",
+  "version": "1.2.5",
+  "description": "Automatically resume Claude Code terminal sessions when rate limits reset",
+  "main": "auto-resume-daemon.js",
+  "bin": {
+    "auto-resume-daemon": "./auto-resume-daemon.js"
+  },
+  "scripts": {
+    "daemon:start": "node auto-resume-daemon.js start",
+    "daemon:stop": "node auto-resume-daemon.js stop",
+    "daemon:status": "node auto-resume-daemon.js status",
+    "daemon:restart": "node auto-resume-daemon.js restart",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "claude-plugin",
+    "auto-resume",
+    "rate-limit",
+    "cli"
+  ],
+  "author": "Muminur",
+  "license": "MIT",
+  "dependencies": {
+    "chokidar": "^3.5.3",
+    "clipboardy": "^4.0.0",
+    "node-notifier": "^10.0.1",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "optionalDependencies": {
+    "robotjs": "^0.6.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
+  }
+}

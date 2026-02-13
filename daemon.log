@@ -1,0 +1,444 @@
+[34m[DEBUG][0m PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 51708)
+[2026-02-12T05:38:50.518Z] DEBUG: PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 51708)
+
+[35m  ╔═══════════════════════════════════════════════════════════════╗[0m
+[35m  ║      Claude Code Auto-Resume Daemon v1.0.0                 ║[0m
+[35m  ║      Background service for automatic session resume          ║[0m
+[35m  ╚═══════════════════════════════════════════════════════════════╝[0m
+
+[32m[SUCCESS][0m Daemon started (PID: 51708)
+[2026-02-12T05:38:50.519Z] SUCCESS: Daemon started (PID: 51708)
+[36m[INFO][0m Log file: /home/muminur/.claude/auto-resume/daemon.log
+[2026-02-12T05:38:50.519Z] INFO: Log file: /home/muminur/.claude/auto-resume/daemon.log
+[36m[INFO][0m PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[2026-02-12T05:38:50.519Z] INFO: PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[34m[DEBUG][0m Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[2026-02-12T05:38:50.520Z] DEBUG: Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[34m[DEBUG][0m Self-watchdog started (checking every 60s)
+[2026-02-12T05:38:50.520Z] DEBUG: Self-watchdog started (checking every 60s)
+[34m[DEBUG][0m No existing rate limit status found on startup
+[2026-02-12T05:38:50.520Z] DEBUG: No existing rate limit status found on startup
+[34m[DEBUG][0m Transcript polling started (scanning every 30s)
+[2026-02-12T05:38:50.523Z] DEBUG: Transcript polling started (scanning every 30s)
+[32m[SUCCESS][0m Watching status file for changes...
+[2026-02-12T05:38:50.524Z] SUCCESS: Watching status file for changes...
+[36m[INFO][0m Status file: /home/muminur/.claude/auto-resume/status.json
+[2026-02-12T05:38:50.524Z] INFO: Status file: /home/muminur/.claude/auto-resume/status.json
+[36m[INFO][0m Press Ctrl+C to stop daemon
+[2026-02-12T05:38:50.524Z] INFO: Press Ctrl+C to stop daemon
+[34m[DEBUG][0m Keep-alive server on port 39241
+[2026-02-12T05:38:50.530Z] DEBUG: Keep-alive server on port 39241
+[34m[DEBUG][0m PID file removed
+[2026-02-12T05:42:56.065Z] DEBUG: PID file removed
+[34m[DEBUG][0m PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 57454)
+[2026-02-12T05:42:56.066Z] DEBUG: PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 57454)
+
+[35m  ╔═══════════════════════════════════════════════════════════════╗[0m
+[35m  ║      Claude Code Auto-Resume Daemon v1.0.0                 ║[0m
+[35m  ║      Background service for automatic session resume          ║[0m
+[35m  ╚═══════════════════════════════════════════════════════════════╝[0m
+
+[32m[SUCCESS][0m Daemon started (PID: 57454)
+[2026-02-12T05:42:56.067Z] SUCCESS: Daemon started (PID: 57454)
+[36m[INFO][0m Log file: /home/muminur/.claude/auto-resume/daemon.log
+[2026-02-12T05:42:56.067Z] INFO: Log file: /home/muminur/.claude/auto-resume/daemon.log
+[36m[INFO][0m PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[2026-02-12T05:42:56.067Z] INFO: PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[34m[DEBUG][0m Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[2026-02-12T05:42:56.067Z] DEBUG: Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[34m[DEBUG][0m Self-watchdog started (checking every 60s)
+[2026-02-12T05:42:56.067Z] DEBUG: Self-watchdog started (checking every 60s)
+[34m[DEBUG][0m No existing rate limit status found on startup
+[2026-02-12T05:42:56.068Z] DEBUG: No existing rate limit status found on startup
+[34m[DEBUG][0m Transcript polling started (scanning every 30s)
+[2026-02-12T05:42:56.071Z] DEBUG: Transcript polling started (scanning every 30s)
+[32m[SUCCESS][0m Watching status file for changes...
+[2026-02-12T05:42:56.071Z] SUCCESS: Watching status file for changes...
+[36m[INFO][0m Status file: /home/muminur/.claude/auto-resume/status.json
+[2026-02-12T05:42:56.071Z] INFO: Status file: /home/muminur/.claude/auto-resume/status.json
+[36m[INFO][0m Press Ctrl+C to stop daemon
+[2026-02-12T05:42:56.071Z] INFO: Press Ctrl+C to stop daemon
+[34m[DEBUG][0m Keep-alive server on port 36631
+[2026-02-12T05:42:56.078Z] DEBUG: Keep-alive server on port 36631
+[33m[WARNING][0m Started 17s ago (min interval: 30s). Waiting 13s...
+[2026-02-12T05:43:13.917Z] WARNING: Started 17s ago (min interval: 30s). Waiting 13s...
+[34m[DEBUG][0m PID file removed
+[2026-02-12T05:43:26.919Z] DEBUG: PID file removed
+[34m[DEBUG][0m PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 58925)
+[2026-02-12T05:43:26.919Z] DEBUG: PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 58925)
+
+[35m  ╔═══════════════════════════════════════════════════════════════╗[0m
+[35m  ║      Claude Code Auto-Resume Daemon v1.0.0                 ║[0m
+[35m  ║      Background service for automatic session resume          ║[0m
+[35m  ╚═══════════════════════════════════════════════════════════════╝[0m
+
+[32m[SUCCESS][0m Daemon started (PID: 58925)
+[2026-02-12T05:43:26.920Z] SUCCESS: Daemon started (PID: 58925)
+[36m[INFO][0m Log file: /home/muminur/.claude/auto-resume/daemon.log
+[2026-02-12T05:43:26.920Z] INFO: Log file: /home/muminur/.claude/auto-resume/daemon.log
+[36m[INFO][0m PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[2026-02-12T05:43:26.920Z] INFO: PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[34m[DEBUG][0m Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[2026-02-12T05:43:26.920Z] DEBUG: Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[34m[DEBUG][0m Self-watchdog started (checking every 60s)
+[2026-02-12T05:43:26.920Z] DEBUG: Self-watchdog started (checking every 60s)
+[34m[DEBUG][0m No existing rate limit status found on startup
+[2026-02-12T05:43:26.920Z] DEBUG: No existing rate limit status found on startup
+[34m[DEBUG][0m Transcript polling started (scanning every 30s)
+[2026-02-12T05:43:26.924Z] DEBUG: Transcript polling started (scanning every 30s)
+[32m[SUCCESS][0m Watching status file for changes...
+[2026-02-12T05:43:26.924Z] SUCCESS: Watching status file for changes...
+[36m[INFO][0m Status file: /home/muminur/.claude/auto-resume/status.json
+[2026-02-12T05:43:26.924Z] INFO: Status file: /home/muminur/.claude/auto-resume/status.json
+[36m[INFO][0m Press Ctrl+C to stop daemon
+[2026-02-12T05:43:26.924Z] INFO: Press Ctrl+C to stop daemon
+[34m[DEBUG][0m Keep-alive server on port 43477
+[2026-02-12T05:43:26.931Z] DEBUG: Keep-alive server on port 43477
+[2026-02-12T05:50:29.500Z] DEBUG: PID file removed
+[2026-02-12T05:50:29.502Z] DEBUG: PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 66648)
+[2026-02-12T05:50:29.503Z] SUCCESS: Daemon started (PID: 66648)
+[2026-02-12T05:50:29.503Z] INFO: Log file: /home/muminur/.claude/auto-resume/daemon.log
+[2026-02-12T05:50:29.503Z] INFO: PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[2026-02-12T05:50:29.503Z] DEBUG: Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[2026-02-12T05:50:29.503Z] DEBUG: Self-watchdog started (checking every 60s)
+[2026-02-12T05:50:29.504Z] INFO: Found existing rate limit status on startup
+[2026-02-12T05:50:29.504Z] INFO: Reset time already passed, triggering resume immediately
+[2026-02-12T05:50:29.510Z] DEBUG: Transcript polling started (scanning every 30s)
+[2026-02-12T05:50:29.510Z] SUCCESS: Watching status file for changes...
+[2026-02-12T05:50:29.510Z] INFO: Status file: /home/muminur/.claude/auto-resume/status.json
+[2026-02-12T05:50:29.510Z] INFO: Press Ctrl+C to stop daemon
+[2026-02-12T05:50:29.518Z] DEBUG: Keep-alive server on port 41249
+[2026-02-12T05:52:42.541Z] DEBUG: PID file removed
+[2026-02-12T05:52:42.543Z] DEBUG: PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 68336)
+[2026-02-12T05:52:42.543Z] SUCCESS: Daemon started (PID: 68336)
+[2026-02-12T05:52:42.543Z] INFO: Log file: /home/muminur/.claude/auto-resume/daemon.log
+[2026-02-12T05:52:42.543Z] INFO: PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[2026-02-12T05:52:42.544Z] DEBUG: Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[2026-02-12T05:52:42.544Z] DEBUG: Self-watchdog started (checking every 60s)
+[2026-02-12T05:52:42.544Z] DEBUG: No existing rate limit status found on startup
+[2026-02-12T05:52:42.547Z] DEBUG: Transcript polling started (scanning every 30s)
+[2026-02-12T05:52:42.548Z] SUCCESS: Watching status file for changes...
+[2026-02-12T05:52:42.548Z] INFO: Status file: /home/muminur/.claude/auto-resume/status.json
+[2026-02-12T05:52:42.548Z] INFO: Press Ctrl+C to stop daemon
+[2026-02-12T05:52:42.555Z] DEBUG: Keep-alive server on port 36275
+[2026-02-12T05:52:57.374Z] WARNING: Started 15s ago (min interval: 30s). Waiting 15s...
+[2026-02-12T05:53:22.388Z] DEBUG: PID file removed
+[2026-02-12T05:53:22.390Z] DEBUG: PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 68883)
+[2026-02-12T05:53:22.390Z] SUCCESS: Daemon started (PID: 68883)
+[2026-02-12T05:53:22.391Z] INFO: Log file: /home/muminur/.claude/auto-resume/daemon.log
+[2026-02-12T05:53:22.391Z] INFO: PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[2026-02-12T05:53:22.391Z] DEBUG: Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[2026-02-12T05:53:22.391Z] DEBUG: Self-watchdog started (checking every 60s)
+[2026-02-12T05:53:22.392Z] DEBUG: No existing rate limit status found on startup
+[2026-02-12T05:53:22.394Z] DEBUG: Transcript polling started (scanning every 30s)
+[2026-02-12T05:53:22.395Z] SUCCESS: Watching status file for changes...
+[2026-02-12T05:53:22.395Z] INFO: Status file: /home/muminur/.claude/auto-resume/status.json
+[2026-02-12T05:53:22.395Z] INFO: Press Ctrl+C to stop daemon
+[2026-02-12T05:53:22.400Z] DEBUG: Keep-alive server on port 39757
+[2026-02-12T05:53:32.355Z] INFO: Received SIGTERM, shutting down gracefully...
+[2026-02-12T05:53:32.356Z] DEBUG: PID file removed
+[2026-02-12T05:53:32.356Z] SUCCESS: Daemon stopped
+[2026-02-12T05:54:53.798Z] WRAPPER: TCP anchor created
+[2026-02-12T05:54:53.802Z] WRAPPER: Loading daemon module...
+[2026-02-12T05:54:53.808Z] WRAPPER: Calling daemon.main()...
+[2026-02-12T05:54:53.810Z] DEBUG: PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 70040)
+[2026-02-12T05:54:53.811Z] SUCCESS: Daemon started (PID: 70040)
+[2026-02-12T05:54:53.811Z] INFO: Log file: /home/muminur/.claude/auto-resume/daemon.log
+[2026-02-12T05:54:53.812Z] INFO: PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[2026-02-12T05:54:53.812Z] DEBUG: Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[2026-02-12T05:54:53.813Z] DEBUG: Self-watchdog started (checking every 60s)
+[2026-02-12T05:54:53.813Z] DEBUG: No existing rate limit status found on startup
+[2026-02-12T05:54:53.823Z] DEBUG: Transcript polling started (scanning every 30s)
+[2026-02-12T05:54:53.823Z] SUCCESS: Watching status file for changes...
+[2026-02-12T05:54:53.823Z] INFO: Status file: /home/muminur/.claude/auto-resume/status.json
+[2026-02-12T05:54:53.823Z] INFO: Press Ctrl+C to stop daemon
+[2026-02-12T05:54:53.824Z] WRAPPER: daemon.main() returned
+[2026-02-12T05:54:53.838Z] DEBUG: Keep-alive server on port 40085
+[2026-02-12T05:54:53.841Z] WRAPPER: process.exit(0) called
+[2026-02-12T05:54:53.841Z] WRAPPER: Error: EXIT_TRACE code=0
+    at process.<anonymous> (/home/muminur/.claude/auto-resume/systemd-wrapper.js:31:15)
+    at process.emit (node:events:508:20)
+    at process.exit (node:internal/process/per_thread:236:15)
+    at main (/home/muminur/.claude/hooks/rate-limit-hook.js:521:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+[2026-02-12T05:55:40.907Z] WRAPPER: TCP anchor created
+[2026-02-12T05:55:40.909Z] WRAPPER: Loading daemon module...
+[2026-02-12T05:55:40.911Z] WRAPPER: Calling daemon.main()...
+[2026-02-12T05:55:40.912Z] DEBUG: PID file removed
+[2026-02-12T05:55:40.913Z] DEBUG: PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 70622)
+[2026-02-12T05:55:40.913Z] SUCCESS: Daemon started (PID: 70622)
+[2026-02-12T05:55:40.913Z] INFO: Log file: /home/muminur/.claude/auto-resume/daemon.log
+[2026-02-12T05:55:40.913Z] INFO: PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[2026-02-12T05:55:40.913Z] DEBUG: Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[2026-02-12T05:55:40.913Z] DEBUG: Self-watchdog started (checking every 60s)
+[2026-02-12T05:55:40.914Z] DEBUG: No existing rate limit status found on startup
+[2026-02-12T05:55:40.915Z] DEBUG: Transcript polling started (scanning every 30s)
+[2026-02-12T05:55:40.915Z] SUCCESS: Watching status file for changes...
+[2026-02-12T05:55:40.915Z] INFO: Status file: /home/muminur/.claude/auto-resume/status.json
+[2026-02-12T05:55:40.915Z] INFO: Press Ctrl+C to stop daemon
+[2026-02-12T05:55:40.916Z] WRAPPER: daemon.main() returned
+[2026-02-12T05:55:40.921Z] DEBUG: Keep-alive server on port 39579
+[2026-02-12T05:56:34.968Z] WARNING: 
+[2026-02-12T05:56:34.968Z] WARNING: Rate limit detected!
+[2026-02-12T05:56:34.983Z] INFO: Reset time: 2/12/2026, 11:56:54 AM
+[2026-02-12T05:56:34.983Z] INFO: Message: Rate limit test - simulated rate limit
+[2026-02-12T05:56:34.983Z] DEBUG: Timezone: Asia/Dhaka
+[2026-02-12T05:56:54.000Z] INFO: Reset time reached! Waiting 10 seconds for API to fully reset...
+[2026-02-12T05:57:04.002Z] INFO: Sending continue to terminals...
+[2026-02-12T05:57:04.008Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:57:04.144Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:04.144Z] ERROR: Keystroke send failed (attempt 1/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:04.145Z] INFO: Retrying in 10 seconds...
+[2026-02-12T05:57:14.148Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:57:14.268Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:14.268Z] ERROR: Keystroke send failed (attempt 2/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:14.268Z] INFO: Retrying in 10 seconds...
+[2026-02-12T05:57:24.271Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:57:24.391Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:24.391Z] ERROR: Keystroke send failed (attempt 3/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:24.391Z] ERROR: All 3 keystroke send attempts failed
+[2026-02-12T05:57:24.391Z] ERROR: Failed to send keystrokes, will retry resume cycle
+[2026-02-12T05:57:24.391Z] WARNING: Resume attempt 2/5 after 10s backoff...
+[2026-02-12T05:57:34.391Z] INFO: Sending continue to terminals...
+[2026-02-12T05:57:34.394Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:57:34.534Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:34.535Z] ERROR: Keystroke send failed (attempt 1/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:34.535Z] INFO: Retrying in 10 seconds...
+[2026-02-12T05:57:44.538Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:57:44.656Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:44.656Z] ERROR: Keystroke send failed (attempt 2/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:44.656Z] INFO: Retrying in 10 seconds...
+[2026-02-12T05:57:54.660Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:57:54.776Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:54.776Z] ERROR: Keystroke send failed (attempt 3/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:57:54.776Z] ERROR: All 3 keystroke send attempts failed
+[2026-02-12T05:57:54.776Z] ERROR: Failed to send keystrokes, will retry resume cycle
+[2026-02-12T05:57:54.776Z] WARNING: Resume attempt 3/5 after 20s backoff...
+[2026-02-12T05:58:14.777Z] INFO: Sending continue to terminals...
+[2026-02-12T05:58:14.780Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:58:14.901Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:58:14.901Z] ERROR: Keystroke send failed (attempt 1/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:58:14.901Z] INFO: Retrying in 10 seconds...
+[2026-02-12T05:58:24.905Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:58:25.022Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:58:25.022Z] ERROR: Keystroke send failed (attempt 2/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:58:25.022Z] INFO: Retrying in 10 seconds...
+[2026-02-12T05:58:35.028Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:58:35.190Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:58:35.190Z] ERROR: Keystroke send failed (attempt 3/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:58:35.190Z] ERROR: All 3 keystroke send attempts failed
+[2026-02-12T05:58:35.190Z] ERROR: Failed to send keystrokes, will retry resume cycle
+[2026-02-12T05:58:35.190Z] WARNING: Resume attempt 4/5 after 40s backoff...
+[2026-02-12T05:59:15.191Z] INFO: Sending continue to terminals...
+[2026-02-12T05:59:15.194Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:59:15.327Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:59:15.327Z] ERROR: Keystroke send failed (attempt 1/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:59:15.327Z] INFO: Retrying in 10 seconds...
+[2026-02-12T05:59:25.330Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:59:25.475Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:59:25.475Z] ERROR: Keystroke send failed (attempt 2/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:59:25.475Z] INFO: Retrying in 10 seconds...
+[2026-02-12T05:59:35.479Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T05:59:35.616Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:59:35.616Z] ERROR: Keystroke send failed (attempt 3/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T05:59:35.616Z] ERROR: All 3 keystroke send attempts failed
+[2026-02-12T05:59:35.616Z] ERROR: Failed to send keystrokes, will retry resume cycle
+[2026-02-12T05:59:35.616Z] WARNING: Resume attempt 5/5 after 60s backoff...
+[2026-02-12T06:00:35.616Z] INFO: Sending continue to terminals...
+[2026-02-12T06:00:35.619Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:00:35.738Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:00:35.738Z] ERROR: Keystroke send failed (attempt 1/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:00:35.738Z] INFO: Retrying in 10 seconds...
+[2026-02-12T06:00:45.741Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:00:45.857Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:00:45.857Z] ERROR: Keystroke send failed (attempt 2/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:00:45.857Z] INFO: Retrying in 10 seconds...
+[2026-02-12T06:00:55.862Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:00:55.996Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:00:55.996Z] ERROR: Keystroke send failed (attempt 3/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:00:55.996Z] ERROR: All 3 keystroke send attempts failed
+[2026-02-12T06:00:55.996Z] ERROR: Failed to send keystrokes, will retry resume cycle
+[2026-02-12T06:00:55.996Z] ERROR: Resume failed after 5 attempts
+[2026-02-12T06:03:51.386Z] WARNING: 
+[2026-02-12T06:03:51.386Z] WARNING: Rate limit detected!
+[2026-02-12T06:03:51.386Z] INFO: Reset time: 2/12/2026, 12:04:21 PM
+[2026-02-12T06:03:51.386Z] INFO: Message: LIVE TEST - Rate limit simulation on active Claude Code session
+[2026-02-12T06:03:51.386Z] DEBUG: Timezone: Asia/Dhaka
+[2026-02-12T06:04:21.413Z] INFO: Reset time reached! Waiting 10 seconds for API to fully reset...
+[2026-02-12T06:04:31.414Z] INFO: Sending continue to terminals...
+[2026-02-12T06:04:31.417Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:04:31.590Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:04:31.590Z] ERROR: Keystroke send failed (attempt 1/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:04:31.590Z] INFO: Retrying in 10 seconds...
+[2026-02-12T06:04:41.593Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:04:41.770Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:04:41.770Z] ERROR: Keystroke send failed (attempt 2/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:04:41.771Z] INFO: Retrying in 10 seconds...
+[2026-02-12T06:04:51.776Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:04:51.952Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:04:51.952Z] ERROR: Keystroke send failed (attempt 3/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:04:51.952Z] ERROR: All 3 keystroke send attempts failed
+[2026-02-12T06:04:51.952Z] ERROR: Failed to send keystrokes, will retry resume cycle
+[2026-02-12T06:04:51.952Z] WARNING: Resume attempt 2/5 after 10s backoff...
+[2026-02-12T06:05:01.953Z] INFO: Sending continue to terminals...
+[2026-02-12T06:05:01.956Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:05:02.132Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:05:02.132Z] ERROR: Keystroke send failed (attempt 1/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:05:02.132Z] INFO: Retrying in 10 seconds...
+[2026-02-12T06:05:12.137Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:05:12.312Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:05:12.312Z] ERROR: Keystroke send failed (attempt 2/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:05:12.312Z] INFO: Retrying in 10 seconds...
+[2026-02-12T06:05:22.315Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:05:22.492Z] ERROR: Failed to send keystrokes: Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:05:22.492Z] ERROR: Keystroke send failed (attempt 3/3): Command failed: /bin/sh "/tmp/claude-auto-resume-send-70622.sh"
+
+[2026-02-12T06:05:22.492Z] ERROR: All 3 keystroke send attempts failed
+[2026-02-12T06:05:22.492Z] ERROR: Failed to send keystrokes, will retry resume cycle
+[2026-02-12T06:05:22.492Z] WARNING: Resume attempt 3/5 after 20s backoff...
+[2026-02-12T06:05:35.822Z] INFO: Received SIGTERM, shutting down gracefully...
+[2026-02-12T06:05:35.823Z] DEBUG: PID file removed
+[2026-02-12T06:05:35.823Z] SUCCESS: Daemon stopped
+[2026-02-12T06:05:35.823Z] WRAPPER: process.exit(0) called
+[2026-02-12T06:05:35.824Z] WRAPPER: Error: EXIT_TRACE code=0
+    at process.<anonymous> (/home/muminur/.claude/auto-resume/systemd-wrapper.js:31:15)
+    at process.emit (node:events:508:20)
+    at process.exit (node:internal/process/per_thread:236:15)
+    at shutdown (/home/muminur/.claude/auto-resume/auto-resume-daemon.js:1390:13)
+    at process.<anonymous> (/home/muminur/.claude/auto-resume/auto-resume-daemon.js:1394:31)
+    at process.emit (node:events:508:20)
+[2026-02-12T06:05:35.867Z] DEBUG: PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 82929)
+[2026-02-12T06:05:35.873Z] SUCCESS: Daemon started (PID: 82929)
+[2026-02-12T06:05:35.873Z] INFO: Log file: /home/muminur/.claude/auto-resume/daemon.log
+[2026-02-12T06:05:35.873Z] INFO: PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[2026-02-12T06:05:35.873Z] DEBUG: Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[2026-02-12T06:05:35.874Z] DEBUG: Self-watchdog started (checking every 60s)
+[2026-02-12T06:05:35.874Z] INFO: Found existing rate limit status on startup
+[2026-02-12T06:05:35.874Z] INFO: Reset time already passed, triggering resume immediately
+[2026-02-12T06:05:35.879Z] DEBUG: Transcript polling started (scanning every 30s)
+[2026-02-12T06:05:35.879Z] SUCCESS: Watching status file for changes...
+[2026-02-12T06:05:35.879Z] INFO: Status file: /home/muminur/.claude/auto-resume/status.json
+[2026-02-12T06:05:35.879Z] INFO: Press Ctrl+C to stop daemon
+[2026-02-12T06:05:35.885Z] DEBUG: Keep-alive server on port 37803
+[2026-02-12T06:05:35.891Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:05:36.880Z] WARNING: 
+[2026-02-12T06:05:36.880Z] WARNING: Rate limit detected!
+[2026-02-12T06:05:36.895Z] INFO: Reset time: 2/12/2026, 12:04:21 PM
+[2026-02-12T06:05:36.895Z] INFO: Message: LIVE TEST - Rate limit simulation on active Claude Code session
+[2026-02-12T06:05:36.895Z] DEBUG: Timezone: Asia/Dhaka
+[2026-02-12T06:05:37.896Z] INFO: Reset time reached! Waiting 10 seconds for API to fully reset...
+[2026-02-12T06:05:41.374Z] SUCCESS: Sent: Escape, Ctrl+U, then continue + Enter to terminal windows
+[2026-02-12T06:05:41.374Z] INFO: Sent to 2 window(s) (strategy: saved-pid)
+[2026-02-12T06:05:41.374Z] SUCCESS: Auto-resume completed for past rate limit!
+[2026-02-12T06:05:41.374Z] DEBUG: Status file cleared
+[2026-02-12T06:05:41.900Z] INFO: Status file removed, stopping countdown
+[2026-02-12T06:05:47.897Z] INFO: Sending continue to terminals...
+[2026-02-12T06:05:47.900Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:05:53.712Z] SUCCESS: Sent: Escape, Ctrl+U, then continue + Enter to terminal windows
+[2026-02-12T06:05:53.712Z] INFO: Sent to 2 window(s) (strategy: live-pid)
+[2026-02-12T06:05:53.712Z] INFO: Verifying resume for 90s...
+[2026-02-12T06:06:02.920Z] WARNING: 
+[2026-02-12T06:06:02.920Z] WARNING: Rate limit detected!
+[2026-02-12T06:06:02.920Z] INFO: Reset time: 2/12/2026, 12:06:22 PM
+[2026-02-12T06:06:02.920Z] INFO: Message: LIVE TEST on active Claude Code window
+[2026-02-12T06:06:02.920Z] DEBUG: Timezone: Asia/Dhaka
+[2026-02-12T06:06:22.938Z] INFO: Reset time reached! Waiting 10 seconds for API to fully reset...
+[2026-02-12T06:06:32.938Z] INFO: Sending continue to terminals...
+[2026-02-12T06:06:32.940Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:06:38.426Z] SUCCESS: Sent: Escape, Ctrl+U, then continue + Enter to terminal windows
+[2026-02-12T06:06:38.426Z] INFO: Sent to 2 window(s) (strategy: saved-pid)
+[2026-02-12T06:06:38.426Z] INFO: Verifying resume for 90s...
+[2026-02-12T06:07:23.722Z] SUCCESS: Auto-resume completed! No re-detection within verification window.
+[2026-02-12T06:07:23.722Z] DEBUG: Status file cleared
+[2026-02-12T06:08:08.426Z] SUCCESS: Auto-resume completed! No re-detection within verification window.
+[2026-02-12T06:08:08.426Z] DEBUG: Status file cleared
+[2026-02-12T06:09:26.766Z] INFO: Received SIGTERM, shutting down gracefully...
+[2026-02-12T06:09:26.766Z] DEBUG: PID file removed
+[2026-02-12T06:09:26.766Z] SUCCESS: Daemon stopped
+[2026-02-12T06:09:26.815Z] DEBUG: PID file written: /home/muminur/.claude/auto-resume/daemon.pid (PID: 88572)
+[2026-02-12T06:09:26.818Z] SUCCESS: Daemon started (PID: 88572)
+[2026-02-12T06:09:26.818Z] INFO: Log file: /home/muminur/.claude/auto-resume/daemon.log
+[2026-02-12T06:09:26.818Z] INFO: PID file: /home/muminur/.claude/auto-resume/daemon.pid
+[2026-02-12T06:09:26.818Z] DEBUG: Heartbeat started (writing to /home/muminur/.claude/auto-resume/heartbeat.json every 30s)
+[2026-02-12T06:09:26.818Z] DEBUG: Self-watchdog started (checking every 60s)
+[2026-02-12T06:09:26.819Z] DEBUG: No existing rate limit status found on startup
+[2026-02-12T06:09:26.820Z] DEBUG: Transcript polling started (scanning every 30s)
+[2026-02-12T06:09:26.820Z] SUCCESS: Watching status file for changes...
+[2026-02-12T06:09:26.820Z] INFO: Status file: /home/muminur/.claude/auto-resume/status.json
+[2026-02-12T06:09:26.821Z] INFO: Press Ctrl+C to stop daemon
+[2026-02-12T06:09:26.826Z] DEBUG: Keep-alive server on port 35319
+[2026-02-12T06:09:38.832Z] WARNING: 
+[2026-02-12T06:09:38.832Z] WARNING: Rate limit detected!
+[2026-02-12T06:09:38.846Z] INFO: Reset time: 2/12/2026, 12:09:52 PM
+[2026-02-12T06:09:38.846Z] INFO: Message: TAB CYCLING TEST - should send to all terminal tabs
+[2026-02-12T06:09:38.846Z] DEBUG: Timezone: Asia/Dhaka
+[2026-02-12T06:09:52.861Z] INFO: Reset time reached! Waiting 10 seconds for API to fully reset...
+[2026-02-12T06:10:02.862Z] INFO: Sending continue to terminals...
+[2026-02-12T06:10:02.871Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T06:10:12.220Z] SUCCESS: Sent: Escape, Ctrl+U, then continue + Enter to terminal windows
+[2026-02-12T06:10:12.220Z] INFO: Sent to 4 window(s) (strategy: saved-pid)
+[2026-02-12T06:10:12.220Z] INFO: Verifying resume for 90s...
+[2026-02-12T06:11:42.220Z] SUCCESS: Auto-resume completed! No re-detection within verification window.
+[2026-02-12T06:11:42.225Z] DEBUG: Status file cleared
+[2026-02-12T08:15:26.253Z] ERROR: Failed to read status file: Unexpected end of JSON input
+[2026-02-12T08:20:55.573Z] ERROR: Failed to read status file: Unexpected end of JSON input
+[2026-02-12T08:22:20.657Z] ERROR: Failed to read status file: Unexpected end of JSON input
+[2026-02-12T09:12:15.860Z] WARNING: 
+[2026-02-12T09:12:15.860Z] WARNING: Rate limit detected!
+[2026-02-12T09:12:15.860Z] INFO: Reset time: 2/13/2026, 3:00:00 PM
+[2026-02-12T09:12:15.860Z] INFO: Message: You've hit your limit · resets 3pm (Asia/Dhaka)
+[2026-02-12T09:12:15.860Z] DEBUG: Timezone: Asia/Dhaka
+[2026-02-12T11:25:53.829Z] WARNING: 
+[2026-02-12T11:25:53.833Z] WARNING: Rate limit detected!
+[2026-02-12T11:25:53.833Z] INFO: Reset time: 2/12/2026, 8:00:00 PM
+[2026-02-12T11:25:53.833Z] INFO: Message: You've hit your limit · resets 8pm (Asia/Dhaka)
+[2026-02-12T11:25:53.833Z] DEBUG: Timezone: Asia/Dhaka
+[2026-02-12T14:00:00.189Z] INFO: Reset time reached! Waiting 10 seconds for API to fully reset...
+[2026-02-12T14:00:10.190Z] INFO: Sending continue to terminals...
+[2026-02-12T14:00:10.195Z] DEBUG: Using xdotool at: /usr/bin/xdotool
+[2026-02-12T14:00:14.174Z] SUCCESS: Sent: Escape, Ctrl+U, then continue + Enter to terminal windows
+[2026-02-12T14:00:14.175Z] INFO: Sent to 2 window(s) (strategy: live-pid)
+[2026-02-12T14:00:14.175Z] INFO: Verifying resume for 90s...
+[2026-02-12T14:01:44.184Z] SUCCESS: Auto-resume completed! No re-detection within verification window.
+[2026-02-12T14:01:44.185Z] DEBUG: Status file cleared

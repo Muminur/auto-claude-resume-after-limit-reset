@@ -1,0 +1,36 @@
+{
+  "resumePrompt": "continue",
+  "menuSelection": "1",
+  "checkInterval": 5000,
+  "logLevel": "info",
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "websocket": {
+    "enabled": false,
+    "port": 3847
+  },
+  "api": {
+    "enabled": false,
+    "port": 3848
+  },
+  "analytics": {
+    "enabled": true,
+    "retentionDays": 30
+  },
+  "watchPaths": [],
+  "plugins": {
+    "enabled": false,
+    "directory": "/home/muminur/.claude/auto-resume/plugins"
+  },
+  "daemon": {
+    "transcriptPolling": true,
+    "maxLogSizeMB": 1
+  },
+  "resume": {
+    "postResetDelaySec": 10,
+    "maxRetries": 4,
+    "verificationWindowSec": 90
+  }
+}
