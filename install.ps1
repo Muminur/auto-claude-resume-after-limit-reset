@@ -25,7 +25,7 @@
     Uninstalls the plugin
 
 .NOTES
-    Version: 1.0.0
+    Version: 1.3.0
     Requires: PowerShell 5.1+, Node.js 16+ (optional)
 #>
 
@@ -106,7 +106,7 @@ function Write-Error {
 function Show-Banner {
     Write-Host ""
     Write-ColorMessage "===============================================================" "Magenta"
-    Write-ColorMessage "   Claude Code Auto-Resume Plugin Installer v1.0.0           " "Magenta"
+    Write-ColorMessage "   Claude Code Auto-Resume Plugin Installer v1.3.0           " "Magenta"
     Write-ColorMessage "   Automatically resume when rate limits reset               " "Magenta"
     Write-ColorMessage "===============================================================" "Magenta"
     Write-Host ""
@@ -497,6 +497,17 @@ function Install-Plugin {
         Write-Warning "ensure-daemon-running.js not found: $ENSURE_DAEMON_SOURCE"
     }
 
+    # Copy tiered delivery modules (gracefully degrade on Windows)
+    foreach ($dir in @("delivery", "verification", "queue")) {
+        $srcPath = Join-Path $SCRIPT_DIR "src\$dir"
+        $destPath = Join-Path $AUTO_RESUME_DIR "src\$dir"
+        if (Test-Path $srcPath) {
+            New-Item -Path $destPath -ItemType Directory -Force | Out-Null
+            Copy-Item -Path "$srcPath\*.js" -Destination $destPath -Force
+            Write-Success "Installed: $destPath"
+        }
+    }
+
     Write-Host ""
 
     # Step 3.5: Install npm dependencies
@@ -578,6 +589,9 @@ function Install-Plugin {
     Write-Host "  3. The hook will automatically detect rate limits in Claude Code"
     Write-Host ""
     Write-Host "  4. The daemon will monitor and auto-resume when limits reset"
+    Write-Host ""
+    Write-Info "Note: On Windows, resume uses PowerShell SendKeys (Tier 3)."
+    Write-Info "Tmux/PTY delivery (Tiers 1-2) are Linux/macOS only."
     Write-Host ""
 
     if ($addToStartup -ne "y" -and $addToStartup -ne "Y") {

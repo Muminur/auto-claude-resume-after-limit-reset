@@ -75,7 +75,16 @@ systemd
               ├── File watcher (polls status.json)
               ├── Transcript poller (scans JSONL)
               ├── Countdown timer
-              └── Keystroke injector (xdotool)
+              ├── src/
+              │     ├── delivery/
+              │     │     ├── orchestrator.js   (tiered delivery coordinator)
+              │     │     ├── tmux.js           (Tier 1 — tmux send-keys)
+              │     │     └── pty.js            (Tier 2 — PTY /dev/pts/N)
+              │     ├── verification/
+              │     │     └── active.js          (post-delivery transcript poll)
+              │     └── queue/
+              │           └── rate-limit-queue.js (FIFO event queue)
+              └── Keystroke injector (Tier 3: xdotool / osascript / SendKeys)
 ```
 
 #### Why the wrapper?
@@ -207,7 +216,89 @@ Solution:
 └──────────────────────────────────────────┘
 ```
 
-### 6. Cross-Platform Keystroke Sending
+### 6. Tiered Delivery Stack
+
+Keystroke delivery uses a tiered fallback approach. The `DeliveryOrchestrator`
+tries each tier in order and falls back to the next on failure.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  DeliveryOrchestrator  (src/delivery/orchestrator.js)    │
+│  Coordinates tiers — tries 1 → 2 → 3 until one succeeds │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  Tier 1: TmuxDelivery  (src/delivery/tmux.js)            │
+│  └── tmux send-keys to target pane                       │
+│  └── Most reliable when session runs inside tmux         │
+│                                                          │
+│  Tier 2: PtyDelivery   (src/delivery/pty.js)             │
+│  └── Direct PTY write to /dev/pts/N                      │
+│  └── Works without X11 / Wayland; needs read access      │
+│                                                          │
+│  Tier 3: Platform-native                                 │
+│  ├── Linux:   XdotoolDelivery (xdotool type + key)       │
+│  ├── macOS:   osascript keystroke                         │
+│  └── Windows: PowerShell SendKeys                        │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 7. Active Verification
+
+After delivery, the daemon verifies that the resume actually took effect
+by polling the Claude Code transcript file for new activity.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Active Verification  (src/verification/)                │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  1. Delivery completes (keystrokes sent)                 │
+│  2. Poll transcript JSONL for new lines / mtime change   │
+│  3. If new activity detected → resume confirmed          │
+│  4. If timeout reached → log warning, optionally retry   │
+│                                                          │
+│  Config keys (in config or status):                      │
+│  ├── activeVerificationTimeoutMs  (max wait, e.g. 30s)  │
+│  └── activeVerificationPollMs    (poll interval, e.g. 2s)│
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 8. Rate Limit Queue
+
+Multiple rate limit detections are queued rather than overwriting a single
+slot, preventing lost events during rapid successive detections.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Rate Limit Queue  (src/queue/)                          │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  status.json stores a queue array:                       │
+│  {                                                       │
+│    "detected": true,                                     │
+│    "queue": [                                            │
+│      { "reset_time": "...", "claude_pid": 111 },         │
+│      { "reset_time": "...", "claude_pid": 222 }          │
+│    ]                                                     │
+│  }                                                       │
+│                                                          │
+│  ┌─ Hook fires ──► enqueue(event) ──► status.json ──┐   │
+│  │                                                   │   │
+│  │  Daemon reads queue, processes head entry first   │   │
+│  │  After successful resume, shifts queue            │   │
+│  └───────────────────────────────────────────────────┘   │
+│                                                          │
+│  Benefits:                                               │
+│  ├── No lost events when limits hit in quick succession  │
+│  ├── Ordered processing (FIFO)                           │
+│  └── Atomic JSON read/write with file locking            │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 9. Cross-Platform Keystroke Sending
 
 ```
 ┌──────────────────────────────────────────┐
@@ -247,15 +338,27 @@ Time T0 to Reset: Countdown
 │ Every second: "[WAITING] Resuming in HH:MM:SS..."
 │
 ▼
-Time Reset+10s: Send keystrokes
-│ Find terminal windows (3 strategies)
-│ Count gnome-terminal tabs
-│ For each tab: Esc → Ctrl+U → "continue" → Enter
-│ Ctrl+PageDown between tabs
+Time Reset+10s: Dequeue & deliver
+│ Pop head entry from rate limit queue
+│ DeliveryOrchestrator begins tiered delivery:
+│   Tier 1 → tmux send-keys (if tmux session found)
+│   Tier 2 → PTY write to /dev/pts/N (if accessible)
+│   Tier 3 → xdotool / osascript / SendKeys (platform-native)
+│ First successful tier wins; others skipped
+│
+▼
+Time Reset+12s: Active verification
+│ Poll transcript JSONL for new activity
+│ Interval: activeVerificationPollMs (default 2s)
+│ Timeout: activeVerificationTimeoutMs (default 30s)
+│ Confirmed → proceed to cleanup
+│ Timeout  → log warning, optional retry
 │
 ▼
 Time Reset+15s: Cleanup
-│ Clear status.json
+│ Shift processed entry from queue
+│ If queue empty → clear status.json
+│ If queue has more → process next entry
 │ Log completion
 │ Back to watching state
 ```

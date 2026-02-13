@@ -57,7 +57,7 @@ try {
   // Module not available, will show error when command is used
 }
 
-const VERSION = '1.0.0';
+const VERSION = '1.3.0';
 const HOME_DIR = os.homedir();
 const BASE_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
 const STATUS_FILE = path.join(BASE_DIR, 'status.json');

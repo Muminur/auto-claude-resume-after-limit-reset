@@ -33,7 +33,7 @@ REPO_URL="https://github.com/Muminur/auto-claude-resume-after-limit-reset.git"
 
 echo ""
 echo -e "${MAGENTA}  ╔═══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${MAGENTA}  ║          Auto Claude Resume — Quick Installer                ║${NC}"
+echo -e "${MAGENTA}  ║       Auto Claude Resume — Quick Installer v1.3.0            ║${NC}"
 echo -e "${MAGENTA}  ╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -212,6 +212,21 @@ if [[ -f "$HOME/.claude/auto-resume/ensure-daemon-running.js" ]]; then
     log_success "SessionStart hook helper installed"
 else
     log_error "ensure-daemon-running.js not found"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Check tmux availability (optional)
+if command -v tmux &>/dev/null; then
+    log_success "tmux available — Tier 1 delivery enabled (works when screen is locked)"
+else
+    log_warning "tmux not found (optional) — install for screen-locked resume: sudo apt install tmux"
+fi
+
+# Check tiered delivery modules
+if [[ -d "$HOME/.claude/auto-resume/src/delivery" ]]; then
+    log_success "Tiered delivery modules installed"
+else
+    log_warning "Tiered delivery modules not found"
     ERRORS=$((ERRORS + 1))
 fi
 

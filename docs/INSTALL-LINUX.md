@@ -4,12 +4,25 @@ Complete guide for installing Auto Claude Resume on Linux (Ubuntu, Debian, Fedor
 
 > **Important:** `xdotool` is the **only required system dependency** on Linux. Without it, the daemon will start but **silently fail to resume sessions** when the countdown ends.
 
+## Resume Tier Advantages on Linux
+
+Linux supports **all three resume tiers**, giving you the most reliable screen-locked resume experience:
+
+| Tier | Method | Screen-Locked Resume | Linux Support |
+|------|--------|---------------------|---------------|
+| **Tier 1** | tmux (send-keys) | Yes | Full support |
+| **Tier 2** | PTY (direct write) | Yes | Full support (Linux-only) |
+| **Tier 3** | xdotool (keystroke injection) | No (requires active X11 session) | Full support |
+
+Tier 1 (tmux) and Tier 2 (PTY) are **Linux advantages** for screen-locked resume -- they work even when your screen is locked, SSH sessions are disconnected, or no graphical display is available.
+
 ## Prerequisites
 
-- Linux with X11 display (Wayland has limited support)
+- Linux with X11 display (Wayland has limited support) -- only needed for Tier 3
 - Claude Code CLI installed
 - Node.js 16+ ([Installation guide](https://nodejs.org/en/download/package-manager))
-- `xdotool` (for sending keystrokes)
+- `xdotool` (for sending keystrokes -- Tier 3 fallback)
+- `tmux` (recommended for Tier 1 resume)
 
 ---
 
@@ -29,7 +42,7 @@ The script will:
 
 ### Manual Installation
 
-#### Step 1: Install xdotool
+#### Step 1a: Install xdotool (Tier 3 fallback)
 
 ```bash
 # Ubuntu/Debian
@@ -53,6 +66,26 @@ Verify:
 which xdotool && xdotool search --class "gnome-terminal" && echo "OK"
 ```
 
+#### Step 1b: Install tmux (Recommended -- Tier 1)
+
+tmux enables Tier 1 resume, which works even when the screen is locked or no display is available.
+
+```bash
+# Ubuntu/Debian
+sudo apt install tmux
+
+# Fedora/RHEL/CentOS
+sudo dnf install tmux
+
+# Arch Linux
+sudo pacman -S tmux
+```
+
+Verify:
+```bash
+tmux -V
+```
+
 #### Step 2: Clone, Install, and Copy Files
 
 ```bash
@@ -74,7 +107,18 @@ cp scripts/ensure-daemon-running.js ~/.claude/auto-resume/
 
 # Copy dependencies
 cp -r node_modules ~/.claude/auto-resume/
+
+# Copy src/ modules (delivery, verification, queue)
+cp -r src/{delivery,verification,queue} ~/.claude/auto-resume/src/
 ```
+
+#### Step 2b: Set Up tmux Alias (Optional)
+
+```bash
+bash scripts/setup-tmux-alias.sh
+```
+
+This creates a shell alias for launching Claude Code inside a tmux session, enabling Tier 1 resume automatically.
 
 #### Step 3: Register Hooks
 

@@ -50,6 +50,28 @@ node "%USERPROFILE%\.claude\plugins\cache\auto-claude-resume\auto-resume\1.4.13\
 [INFO] Daemon is not running (no PID file)
 ```
 
+### Queue-Based Status Format (v1.3.0+)
+
+The daemon now uses a queue-based status format in `status.json`. Multiple rate limit detections are tracked as an array of pending events rather than a single slot, preventing lost events during rapid successive detections.
+
+```json
+{
+  "queue": [
+    {
+      "resetTime": "2025-02-13T14:00:00.000Z",
+      "detectedAt": "2025-02-13T13:15:00.000Z",
+      "tier": 1,
+      "method": "tmux"
+    }
+  ],
+  "lastResume": {
+    "time": "2025-02-13T14:00:10.000Z",
+    "tier": 1,
+    "verified": true
+  }
+}
+```
+
 ### PID File Location
 
 - **macOS/Linux:** `~/.claude/auto-resume/daemon.pid`

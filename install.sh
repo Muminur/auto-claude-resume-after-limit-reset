@@ -84,7 +84,7 @@ log_step() {
 show_banner() {
     echo ""
     echo -e "${MAGENTA}  ╔═══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}  ║       Claude Code Auto-Resume Plugin Installer v1.0.0        ║${NC}"
+    echo -e "${MAGENTA}  ║       Claude Code Auto-Resume Plugin Installer v1.3.0        ║${NC}"
     echo -e "${MAGENTA}  ║              Linux & macOS Installation Script               ║${NC}"
     echo -e "${MAGENTA}  ╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -224,6 +224,32 @@ check_xdotool_linux() {
     return 0
 }
 
+check_tmux() {
+    log_step "Checking tmux (optional, recommended for reliable resume)..."
+    if command -v tmux &> /dev/null; then
+        log_success "tmux is installed ($(tmux -V))"
+        return 0
+    fi
+    log_info "tmux not found (optional — enables resume when screen is locked)"
+    if [[ "$PLATFORM" == "linux" ]]; then
+        read -p "Install tmux? [y/N]: " -n 1 -r; echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            if command -v apt-get &>/dev/null; then sudo apt-get install -y tmux
+            elif command -v dnf &>/dev/null; then sudo dnf install -y tmux
+            elif command -v pacman &>/dev/null; then sudo pacman -S --noconfirm tmux
+            elif command -v yum &>/dev/null; then sudo yum install -y tmux
+            fi
+        fi
+    elif [[ "$PLATFORM" == "macos" ]]; then
+        if command -v brew &>/dev/null; then
+            read -p "Install tmux via Homebrew? [y/N]: " -n 1 -r; echo
+            [[ $REPLY =~ ^[Yy]$ ]] && brew install tmux
+        else
+            log_info "Install tmux via Homebrew: brew install tmux"
+        fi
+    fi
+}
+
 check_display() {
     log_step "Checking display server..."
 
@@ -292,6 +318,9 @@ check_requirements() {
         check_accessibility_macos
     fi
 
+    # Check tmux (optional, all platforms)
+    check_tmux
+
     # Check jq
     check_jq
 
@@ -339,6 +368,21 @@ copy_files() {
         cp "$ENSURE_DAEMON_SOURCE" "$ENSURE_DAEMON_DEST"
     else
         log_warning "ensure-daemon-running.js not found: $ENSURE_DAEMON_SOURCE"
+    fi
+
+    # Copy tiered delivery modules
+    for dir in delivery verification queue; do
+        if [[ -d "$SCRIPT_DIR/src/$dir" ]]; then
+            mkdir -p "$AUTO_RESUME_DIR/src/$dir"
+            cp "$SCRIPT_DIR/src/$dir/"*.js "$AUTO_RESUME_DIR/src/$dir/"
+        fi
+    done
+
+    # Copy setup scripts
+    if [[ -d "$SCRIPT_DIR/scripts" ]]; then
+        mkdir -p "$AUTO_RESUME_DIR/scripts"
+        cp "$SCRIPT_DIR/scripts/"*.sh "$AUTO_RESUME_DIR/scripts/" 2>/dev/null || true
+        chmod +x "$AUTO_RESUME_DIR/scripts/"*.sh 2>/dev/null || true
     fi
 
     # Make scripts executable
@@ -676,6 +720,13 @@ install() {
         else
             log_info "Skipping launchd service creation"
         fi
+    fi
+
+    # Offer tmux alias setup
+    if command -v tmux &>/dev/null && [[ -f "$AUTO_RESUME_DIR/scripts/setup-tmux-alias.sh" ]]; then
+        echo ""
+        read -p "Set up tmux wrapper for screen-locked reliability? [y/N]: " -n 1 -r; echo
+        [[ $REPLY =~ ^[Yy]$ ]] && bash "$AUTO_RESUME_DIR/scripts/setup-tmux-alias.sh"
     fi
 
     echo ""

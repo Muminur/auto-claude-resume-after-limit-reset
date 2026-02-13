@@ -50,14 +50,56 @@ Detection happens via two methods:
 2. **Transcript polling** — Scans JSONL transcripts for rate limit messages (fallback)
 
 ### 3. Automatic Resume
-When the reset time arrives (+ 10s safety delay):
-- Finds all Claude Code terminal windows (cross-platform)
-- Cycles through all gnome-terminal tabs (Linux)
-- Sends Escape + Ctrl+U + "continue" + Enter to each tab
+When the reset time arrives (+ 10s safety delay), the daemon uses a **tiered delivery** strategy, trying each tier in order until one succeeds:
+
+| Tier | Method | Requirement | Reliability |
+|------|--------|-------------|-------------|
+| **Tier 1** | **tmux `send-keys`** | Claude Code running inside a tmux session | Highest — works headless, over SSH, on servers |
+| **Tier 2** | **PTY write** | Linux with `/dev/pts` access | High — no display needed, but Linux-only |
+| **Tier 3** | **xdotool / osascript / SendKeys** | Active graphical display (X11, macOS, Windows) | Moderate — original method, requires foreground session |
+
+For each tier the daemon:
+1. Attempts delivery via the tier's method
+2. Verifies the transcript shows new activity within `activeVerificationTimeoutMs`
+3. If verification fails, falls through to the next tier
+
+After successful delivery on any tier:
 - Clears the status file
+- Sends a desktop notification (if enabled)
 - Logs the completion
 
-### 4. Cross-Platform Support
+### 4. tmux Setup (Recommended for Tier 1)
+
+Running Claude Code inside a **tmux** session gives you the most reliable auto-resume experience (Tier 1). The daemon can inject keystrokes directly into the tmux pane — no graphical display or PTY hacking required.
+
+#### Quick Setup
+
+A helper script is provided to create a shell alias that always launches Claude Code inside tmux:
+
+```bash
+# Run the setup script (creates a `claude-tmux` alias in your shell RC file)
+bash ~/.claude/auto-resume/scripts/setup-tmux-alias.sh
+```
+
+After sourcing your shell profile, use `claude-tmux` instead of `claude` to start Claude Code inside a named tmux session.
+
+#### Manual Setup
+
+If you prefer to set things up yourself:
+
+```bash
+# Start a named tmux session
+tmux new-session -s claude
+
+# Inside the tmux session, run Claude Code as usual
+claude
+
+# Detach anytime with Ctrl+B, D — the daemon can still resume it
+```
+
+The daemon discovers tmux sessions automatically; no additional configuration is needed.
+
+### 5. Cross-Platform Support (Tier 3)
 
 #### Windows
 - Uses PowerShell to find windows with "Claude" in title
@@ -115,6 +157,41 @@ node auto-resume-daemon.js help        # Show all commands
 node auto-resume-daemon.js logs        # View daemon log
 node auto-resume-daemon.js analytics   # View rate limit statistics
 node auto-resume-daemon.js reset       # Clear rate limit status
+```
+
+## Configuration Keys
+
+The daemon reads its configuration from `~/.claude/auto-resume/config.json`. Below are keys related to tiered delivery and verification.
+
+### Active Verification
+
+After the daemon sends a resume command, it verifies that the Claude Code session actually resumed by polling the JSONL transcript for new activity.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `activeVerificationTimeoutMs` | number | `30000` | Maximum time (ms) to wait for transcript activity after sending a resume command. If no new activity appears within this window, the current tier is considered failed and the daemon falls through to the next tier. |
+| `activeVerificationPollMs` | number | `2000` | Interval (ms) at which the daemon polls the transcript file for new entries during verification. Lower values detect success faster but increase disk I/O. |
+
+### Notifications
+
+Desktop notifications are sent via `notify-send` (Linux), `osascript` (macOS), or `PowerShell` (Windows).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `notifications.onSuccess` | boolean | `true` | Send a desktop notification when a resume is delivered and verified successfully. |
+| `notifications.onFailure` | boolean | `true` | Send a desktop notification when all tiers fail to resume the session. |
+
+### Example
+
+```json
+{
+  "activeVerificationTimeoutMs": 30000,
+  "activeVerificationPollMs": 2000,
+  "notifications": {
+    "onSuccess": true,
+    "onFailure": true
+  }
+}
 ```
 
 ## Process Management
@@ -243,6 +320,43 @@ xdotool requires X11. Options:
 1. Switch to X11 session at login
 2. Run under XWayland: `GDK_BACKEND=x11 gnome-terminal`
 3. Use `ydotool` (requires additional setup)
+
+### Tier 1 Not Working (tmux)
+Tier 1 requires Claude Code to be running inside a tmux session.
+```bash
+# Verify tmux is installed
+tmux -V
+
+# List running tmux sessions — Claude Code should appear in one
+tmux list-sessions
+
+# If no sessions are listed, start one and relaunch Claude Code
+tmux new-session -s claude
+claude
+```
+If tmux is running but the daemon still skips Tier 1, check `daemon.log` for messages like `"No tmux sessions found"` and ensure the daemon process can see the same tmux socket (same user, same `TMUX_TMPDIR`).
+
+### Tier 2 Not Working (PTY Write)
+Tier 2 writes directly to the PTY device (`/dev/pts/*`) and is **Linux-only**.
+```bash
+# Check that /dev/pts is mounted and accessible
+ls -la /dev/pts/
+
+# Verify your user has write permission on the target PTY
+# (the daemon log prints the PTY path it attempts to use)
+stat /dev/pts/<N>
+```
+Common issues:
+- **Permission denied** — The daemon must run as the same user that owns the PTY. Containers and strict `devpts` mount options (`ptmxmode=000`) can also block access.
+- **Not Linux** — PTY write is only supported on Linux. macOS and Windows skip directly to Tier 3.
+
+### Falling Back to Tier 3
+If the daemon log shows `"Falling back to Tier 3"`, this is **normal behavior** when you are not using tmux (Tier 1) and PTY write is unavailable or failed (Tier 2). Tier 3 uses the original xdotool/osascript/SendKeys method and requires:
+- **Linux**: An active X11 display (`$DISPLAY` set) and `xdotool` installed.
+- **macOS**: Accessibility permissions granted to Terminal/iTerm.
+- **Windows**: The Claude Code window must be open (not minimized to tray).
+
+If all three tiers fail, the daemon logs a `FAILURE` entry and sends a desktop notification (if `notifications.onFailure` is enabled) so you can resume manually.
 
 ## Security Considerations
 

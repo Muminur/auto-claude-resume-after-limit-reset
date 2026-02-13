@@ -14,9 +14,10 @@ Writes reset time to ~/.claude/auto-resume/status.json
 Background daemon counts down to reset time
         ↓
 After reset + 10s safety delay:
-  → Finds terminal windows via xdotool (Linux) / osascript (macOS) / SendKeys (Windows)
-  → Cycles through ALL terminal tabs (Ctrl+PageDown)
-  → Sends: Escape → Ctrl+U → "continue" → Enter
+  → Tier 1: tmux send-keys (works when screen is locked)
+  → Tier 2: PTY write to /dev/pts/N (works when screen is locked)
+  → Tier 3: xdotool (Linux) / osascript (macOS) / SendKeys (Windows)
+  → Verifies via transcript activity
         ↓
 Claude Code resumes automatically
 ```
@@ -25,14 +26,37 @@ Claude Code resumes automatically
 
 - **Automatic Detection** — Stop hook parses rate limit messages from transcripts
 - **Auto-Resume** — Sends "continue" to ALL terminal tabs when limits reset
+- **Tiered Delivery** — tmux > PTY > xdotool, auto-detects best method
+- **Screen-Lock Safe** — Tier 1 and 2 work when screen is locked
+- **Active Verification** — transcript-based confirmation of resume
+- **Rate Limit Queue** — multiple detections tracked, no overwrite
+- **Desktop Notifications** — success/failure via node-notifier
 - **Tab Cycling** — Handles multiple Claude Code sessions in gnome-terminal tabs
 - **Background Daemon** — Runs as systemd service (Linux) or background process
 - **Crash-Loop Protection** — `StartLimitBurst=3`, `RestartSec=60`, 30s self-protection
-- **Cross-Platform** — Linux (xdotool), macOS (osascript), Windows (PowerShell)
+- **Cross-Platform** — Linux (tmux/PTY/xdotool), macOS (tmux/osascript), Windows (SendKeys)
 - **Zero Configuration** — Just install and forget
 - **Self-Watchdog** — Memory monitoring (exits at 200MB), log rotation (1MB max)
 - **Retry with Backoff** — 4 retries with exponential backoff if resume fails
 - **Transcript Polling** — Redundant fallback detection from JSONL transcripts
+
+## Architecture: Tiered Delivery
+
+The daemon attempts delivery using the most reliable method first, falling back through tiers:
+
+| Tier | Method | Works Locked? | Platform |
+|------|--------|--------------|----------|
+| 1 | tmux send-keys | Yes | Linux/macOS |
+| 2 | PTY write | Yes | Linux |
+| 3 | xdotool/osascript/SendKeys | No | All |
+
+### Cross-Platform Support
+
+| Platform | Tier 1 | Tier 2 | Tier 3 |
+|----------|--------|--------|--------|
+| Linux | tmux send-keys | PTY write (`/dev/pts/N`) | xdotool |
+| macOS | tmux send-keys | — | osascript |
+| Windows | — | — | SendKeys (PowerShell) |
 
 ## Quick Install (Linux)
 
@@ -47,7 +71,10 @@ npm install
 # 3. Install xdotool (required for Linux keystroke injection)
 sudo apt-get install -y xdotool
 
-# 4. Copy files to Claude's directories
+# 4. (Optional, recommended) Install tmux for screen-lock-safe Tier 1 delivery
+sudo apt-get install -y tmux
+
+# 5. Copy files to Claude's directories
 mkdir -p ~/.claude/auto-resume ~/.claude/hooks
 cp auto-resume-daemon.js ~/.claude/auto-resume/
 cp systemd-wrapper.js ~/.claude/auto-resume/
@@ -56,10 +83,10 @@ cp hooks/rate-limit-hook.js ~/.claude/hooks/
 cp scripts/ensure-daemon-running.js ~/.claude/auto-resume/
 cp -r node_modules ~/.claude/auto-resume/
 
-# 5. Register hooks in Claude Code settings
+# 6. Register hooks in Claude Code settings
 # See INSTALL.md for detailed hook registration
 
-# 6. Install systemd service (recommended for Linux)
+# 7. Install systemd service (recommended for Linux)
 cp claude-auto-resume.service ~/.config/systemd/user/
 # Edit the service file to match your DISPLAY and XAUTHORITY:
 #   Environment="DISPLAY=:1"              # Check with: echo $DISPLAY
@@ -101,6 +128,10 @@ curl -fsSL https://raw.githubusercontent.com/Muminur/auto-claude-resume-after-li
 | `ensure-daemon-running.js` | `~/.claude/auto-resume/` | SessionStart hook — auto-starts daemon |
 | `config.json` | `~/.claude/auto-resume/` | Daemon configuration |
 | `claude-auto-resume.service` | `~/.config/systemd/user/` | Systemd service file (Linux) |
+| `src/delivery/` | `~/.claude/auto-resume/` | Tiered delivery modules (tmux, PTY, xdotool) |
+| `src/verification/` | `~/.claude/auto-resume/` | Active transcript verification |
+| `src/queue/` | `~/.claude/auto-resume/` | Rate limit queue manager |
+| `scripts/setup-tmux-alias.sh` | project root | Optional tmux wrapper setup |
 
 ### Daemon Commands
 
@@ -181,11 +212,18 @@ Edit `~/.claude/auto-resume/config.json`:
   "resumePrompt": "continue",
   "checkInterval": 5000,
   "logLevel": "info",
-  "notifications": { "enabled": true, "sound": false },
+  "notifications": {
+    "enabled": true,
+    "sound": false,
+    "onSuccess": true,
+    "onFailure": true
+  },
   "resume": {
     "postResetDelaySec": 10,
     "maxRetries": 4,
-    "verificationWindowSec": 90
+    "verificationWindowSec": 90,
+    "activeVerificationTimeoutMs": 30000,
+    "activeVerificationPollMs": 2000
   },
   "daemon": {
     "transcriptPolling": true,
@@ -196,7 +234,7 @@ Edit `~/.claude/auto-resume/config.json`:
 
 ## Testing
 
-### Systemd Service Tests (24 tests)
+### Systemd Service Tests (30 tests, 8 suites)
 
 ```bash
 bash tests/test-systemd-service.sh
@@ -304,7 +342,8 @@ cd auto-claude-resume-after-limit-reset && git pull && ./install.sh
 ## Dependencies
 
 - **Node.js** >= 16.0.0
-- **xdotool** (Linux only) — `sudo apt-get install xdotool`
+- **tmux** (optional, recommended) — Tier 1 screen-lock-safe delivery
+- **xdotool** (Linux only) — Tier 3 fallback `sudo apt-get install xdotool`
 - **chokidar** — File watching
 - **ws** — WebSocket server
 - **node-notifier** — Desktop notifications

@@ -25,6 +25,7 @@ irm https://raw.githubusercontent.com/Muminur/auto-claude-resume-after-limit-res
 - **Node.js** >= 16.0.0 (`node --version`)
 - **xdotool** — required for keystroke injection
 - **Claude Code** CLI installed and working
+- **tmux** (optional, recommended) — provides reliable resume even when the screen is locked, since tmux sessions persist independently of the graphical display
 
 ### Step 1: Install System Dependencies
 
@@ -61,6 +62,9 @@ cp auto-resume-daemon.js ~/.claude/auto-resume/
 cp systemd-wrapper.js ~/.claude/auto-resume/
 cp config.json ~/.claude/auto-resume/
 
+# Copy src/ modules (delivery, verification, queue)
+cp -r src/{delivery,verification,queue} ~/.claude/auto-resume/src/
+
 # Copy the stop hook (detects rate limits in transcripts)
 cp hooks/rate-limit-hook.js ~/.claude/hooks/
 
@@ -69,6 +73,14 @@ cp scripts/ensure-daemon-running.js ~/.claude/auto-resume/
 
 # Copy node_modules
 cp -r node_modules ~/.claude/auto-resume/
+```
+
+#### Optional: Set Up tmux Alias
+
+If you installed tmux, run the alias setup script to create a `claude-tmux` convenience command:
+
+```bash
+bash scripts/setup-tmux-alias.sh
 ```
 
 ### Step 4: Register Hooks in Claude Code
@@ -300,6 +312,10 @@ Edit `~/.claude/auto-resume/config.json`:
 | `resume.maxRetries` | `4` | Retry count with exponential backoff if resume fails |
 | `daemon.transcriptPolling` | `true` | Redundant fallback: poll JSONL transcripts for rate limits |
 | `daemon.maxLogSizeMB` | `1` | Auto-rotate daemon.log at this size |
+| `activeVerificationTimeoutMs` | `30000` | Timeout (ms) for active verification of resume delivery |
+| `activeVerificationPollMs` | `2000` | Poll interval (ms) during active verification |
+| `notifications.onSuccess` | `true` | Send desktop notification on successful resume |
+| `notifications.onFailure` | `true` | Send desktop notification on failed resume |
 
 ---
 

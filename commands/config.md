@@ -61,6 +61,10 @@ notepad "$env:USERPROFILE\.claude\auto-resume\config.json"
 | `gui.enabled` | boolean | true | Enable GUI dashboard |
 | `gui.port` | number | 3737 | GUI dashboard port |
 | `analytics.enabled` | boolean | true | Enable analytics tracking |
+| `activeVerificationTimeoutMs` | number | 30000 | Max wait time for transcript verification after resume |
+| `activeVerificationPollMs` | number | 2000 | Poll interval for transcript activity check |
+| `notifications.onSuccess` | boolean | true | Desktop notification on successful resume |
+| `notifications.onFailure` | boolean | true | Desktop notification on failed resume |
 
 ### Example Config
 
@@ -88,7 +92,9 @@ notepad "$env:USERPROFILE\.claude\auto-resume\config.json"
   },
   "analytics": {
     "enabled": true
-  }
+  },
+  "activeVerificationTimeoutMs": 30000,
+  "activeVerificationPollMs": 2000
 }
 ```
 

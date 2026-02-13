@@ -30,9 +30,10 @@ Writes reset time to ~/.claude/auto-resume/status.json
 Background daemon counts down to reset time
         |
 After reset + 10s safety delay:
-  -> Finds terminal windows via xdotool (Linux) / osascript (macOS) / SendKeys (Windows)
-  -> Cycles through ALL terminal tabs (Ctrl+PageDown)
+  -> Tiered delivery: tmux send-keys > PTY write > xdotool (auto-detected)
   -> Sends: Escape -> Ctrl+U -> "continue" -> Enter
+        |
+Active verification: reads transcript to confirm resume succeeded
         |
 Claude Code resumes automatically
 ```
@@ -42,15 +43,23 @@ Claude Code resumes automatically
 ```json
 {
   "detected": true,
-  "reset_time": "2026-01-21T20:00:00.000Z",
-  "message": "You've hit your limit · resets 8pm (Asia/Dhaka)",
-  "timezone": "Asia/Dhaka",
-  "timestamp": "2026-01-21T14:30:00.000Z"
+  "queue": [
+    {
+      "reset_time": "2026-01-21T20:00:00.000Z",
+      "message": "You've hit your limit · resets 8pm (Asia/Dhaka)",
+      "timezone": "Asia/Dhaka",
+      "timestamp": "2026-01-21T14:30:00.000Z"
+    }
+  ],
+  "sessions": ["session-abc123"]
 }
 ```
 
-**Required:** `detected` (boolean), `reset_time` (ISO 8601 string)
-**Optional:** `message`, `timezone`, `timestamp`
+**Required:** `detected` (boolean), `queue` (array of pending rate limit events)
+**Each queue entry:** `reset_time` (ISO 8601 string), plus optional `message`, `timezone`, `timestamp`
+**Optional top-level:** `sessions` (array of session IDs that triggered detection)
+
+The daemon processes the earliest `reset_time` from the queue. When a queued event is handled, it is shifted off. New detections append to the array instead of overwriting, ensuring no rate limit event is lost.
 
 ## Daemon Features
 
@@ -77,9 +86,43 @@ For gnome-terminal with multiple tabs:
 3. Presses `Ctrl+PageDown` to switch to next tab
 4. Repeats for all tabs
 
+### Tiered Delivery Architecture
+
+The daemon uses a 3-tier delivery system to send keystrokes to the terminal. Tiers are auto-detected at startup; the daemon uses the highest-priority tier available:
+
+| Tier | Method | How it works | When used |
+|------|--------|-------------|-----------|
+| 1 (best) | **tmux** | `tmux send-keys` to the target pane | Session is inside a tmux pane (detected via `$TMUX` env / tmux process ancestry) |
+| 2 | **PTY** | Direct write to the pseudo-terminal device (`/dev/pts/N`) | TTY device is known from the Claude process (falls back here when tmux is unavailable) |
+| 3 (fallback) | **xdotool** | X11 `xdotool type` / `xdotool key` to the terminal window | No tmux, no accessible PTY; requires an X11 display |
+
+Auto-detection order: the daemon checks for tmux first, then resolves the PTY from the Claude process, and falls back to xdotool window search only if both are unavailable. This eliminates the need for per-machine configuration.
+
+### Active Verification
+
+After sending the resume keystrokes, the daemon does not assume success. Instead it performs transcript-based verification:
+
+1. Waits a configurable window (default 90 seconds) after sending keystrokes.
+2. Reads the most recent JSONL transcript file for the session.
+3. Looks for evidence that Claude Code accepted input and produced new output after the resume timestamp.
+4. If verification fails (no new transcript activity), the daemon retries delivery using the retry/backoff logic.
+
+This closes the gap where keystrokes could be sent to the wrong window or swallowed by a prompt, leaving the session stalled without anyone noticing.
+
+### Rate Limit Queue
+
+When multiple rate limit detections arrive (e.g., several sessions hit limits in quick succession, or the hook fires twice for the same event), they are queued rather than overwriting each other:
+
+- Each detection appends an entry to the `queue` array in `status.json`.
+- The daemon always processes the entry with the **earliest** `reset_time` first.
+- After a successful resume (confirmed by active verification), the processed entry is shifted off the queue.
+- If the queue still has entries, the daemon immediately begins counting down to the next reset time.
+
+This prevents the race condition where a second hook invocation could overwrite an earlier, still-pending reset time.
+
 ### Resume with Retry
 - 4 retries with exponential backoff if keystroke injection fails
-- 90-second verification window to confirm resume worked
+- 90-second verification window to confirm resume worked (see Active Verification above)
 
 ### Crash-Loop Protection
 - Systemd: `StartLimitBurst=3`, `RestartSec=60` (max 3 starts in 5 minutes)
@@ -153,18 +196,26 @@ node auto-resume-daemon.js monitor     # Run in foreground (for systemd)
 
 | Platform | Keystroke Method | Auto-Start |
 |----------|-----------------|------------|
-| Linux | xdotool (X11) | systemd service + SessionStart hook |
+| Linux | Tiered: tmux > PTY > xdotool (auto-detected) | systemd service + SessionStart hook |
 | macOS | osascript (AppleScript) | SessionStart hook |
 | Windows | PowerShell SendKeys | SessionStart hook |
 
 ## Testing
 
 - **Bash tests:** `bash tests/test-systemd-service.sh` (24 tests)
-- **Jest tests:** `npx jest` (unit tests for daemon modules)
+- **Jest tests:** `npx jest` (30 tests across 8 suites — delivery tiers, verification, queue, etc.)
 - **Live test:** `node auto-resume-daemon.js test` (10s countdown + keystroke injection)
 - **Simulate rate limit:** Write to `status.json` with a future `reset_time`
 
 ## Version History
+
+### v1.3.0 — Tiered Delivery, Active Verification, Rate Limit Queue
+
+- **Tiered delivery:** tmux > PTY > xdotool with auto-detection (see Tiered Delivery Architecture)
+- **Active verification:** transcript-based confirmation that resume actually worked (see Active Verification)
+- **Rate limit queue:** multiple detections are queued, not overwritten (see Rate Limit Queue)
+- **Updated install scripts** for tmux support and `src/` module layout
+- **30 tests across 8 suites**
 
 ### v1.8.1 — Bug Fixes
 

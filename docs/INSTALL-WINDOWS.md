@@ -2,6 +2,18 @@
 
 Complete guide for installing Auto Claude Resume on Windows 10/11.
 
+## Platform Limitations
+
+> **Important:** Windows only supports **Tier 3 (PowerShell SendKeys)** for resume functionality. Tier 1 (tmux) and Tier 2 (PTY) are **Linux/macOS only** and are not available on Windows.
+>
+> | Tier | Method | Windows Support |
+> |------|--------|----------------|
+> | **Tier 1** | tmux (send-keys) | Not available |
+> | **Tier 2** | PTY (direct write) | Not available (Linux-only) |
+> | **Tier 3** | PowerShell SendKeys | Full support |
+>
+> The `src/` modules (delivery, verification, queue) are installed on Windows but **gracefully degrade** -- tmux and PTY delivery methods are automatically skipped, and the daemon falls back to PowerShell SendKeys. No manual configuration is needed.
+
 ## Prerequisites
 
 - Windows 10 or Windows 11

@@ -11,6 +11,19 @@ Complete guide for installing Auto Claude Resume on macOS (Monterey, Ventura, So
 
 **Note:** macOS includes all required tools (`osascript`, `pbpaste`) by default.
 
+### Optional: Install tmux (Recommended)
+
+tmux enables **Tier 1 resume**, which works even when the screen is locked or the terminal window is closed.
+
+```bash
+brew install tmux
+```
+
+> **Resume Tiers on macOS:**
+> - **Tier 1 (tmux)** -- Works on macOS. Sends keys via `tmux send-keys`. Supports screen-locked resume.
+> - **Tier 2 (PTY)** -- Linux-only. Not available on macOS.
+> - **Tier 3 (osascript)** -- Default macOS method. Requires an active GUI session and accessibility permissions.
+
 ## Core Dependencies
 
 The following Node.js packages are automatically installed:
@@ -35,6 +48,25 @@ chmod +x install.sh
 ```
 
 **That's it!** The installer registers both hooks, installs dependencies, and the daemon will automatically start when you open a new Claude Code session.
+
+### Copy src/ Modules (Manual Install Only)
+
+If installing manually instead of using `install.sh`, copy the src/ modules:
+
+```bash
+mkdir -p ~/.claude/auto-resume/src
+cp -r src/{delivery,verification,queue} ~/.claude/auto-resume/src/
+```
+
+### Set Up tmux Alias (Optional)
+
+If you installed tmux, run the alias setup script to create a convenient shell alias for launching Claude Code inside a tmux session:
+
+```bash
+bash scripts/setup-tmux-alias.sh
+```
+
+This enables Tier 1 (tmux) resume automatically when you launch Claude Code through the alias.
 
 ### How It Works
 
