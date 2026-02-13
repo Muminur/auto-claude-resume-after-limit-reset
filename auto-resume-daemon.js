@@ -22,6 +22,11 @@ const path = require('path');
 const os = require('os');
 const { exec } = require('child_process');
 
+// New tiered delivery modules
+const { deliverResume } = require('./src/delivery/tiered-delivery');
+const { verifyResumeByTranscript } = require('./src/verification/transcript-verifier');
+const { RateLimitQueue } = require('./src/queue/rate-limit-queue');
+
 // Load modules with graceful fallback
 let configManager = null;
 let AnalyticsCollector = null;
@@ -88,6 +93,7 @@ let currentResetTime = null;
 let lastStatusMtime = null;
 let isBackgroundMode = false;  // Track if running detached (no stdout)
 let dashboard = null;  // Dashboard integration instance
+let currentQueueEntryId = null;
 
 /**
  * Safe stdout write - handles EPIPE errors when running detached
@@ -370,6 +376,226 @@ function formatTimeRemaining(ms) {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+function sendNotification(title, message) {
+  if (NotificationManager) {
+    try {
+      const notifier = new NotificationManager();
+      notifier.init({ enabled: true, sound: true });
+      notifier.notify(title, message).catch(() => {});
+    } catch (e) {
+      // Best effort
+    }
+  }
+}
+
+/**
+ * Send keystrokes via xdotool (extracted from original Linux branch).
+ * Used as Tier 3 fallback by the tiered delivery system.
+ * @param {number|null} claudePid - Claude Code PID for targeted window finding
+ * @returns {Promise<void>}
+ */
+function sendContinueViaXdotool(claudePid) {
+  return new Promise((resolve, reject) => {
+    // Use which to find xdotool (more reliable across environments than command -v)
+    exec('which xdotool 2>/dev/null || command -v xdotool 2>/dev/null', (error, xdotoolPath) => {
+      const xdotool = xdotoolPath ? xdotoolPath.trim() : null;
+      if (error || !xdotool) {
+        log('error', 'xdotool not found. Please install it:');
+        log('info', '  Ubuntu/Debian: sudo apt-get install xdotool');
+        log('info', '  RHEL/CentOS: sudo yum install xdotool');
+        log('info', '  Arch: sudo pacman -S xdotool');
+        reject(new Error('xdotool not found'));
+        return;
+      }
+
+      log('debug', `Using xdotool at: ${xdotool}`);
+
+      // Write shell script to temp file to avoid exec escaping/buffer issues
+      const tempScript = path.join(os.tmpdir(), `claude-auto-resume-send-${process.pid}.sh`);
+      const scriptLines = [
+        '#!/bin/sh',
+        'set +e',
+        `XDOT="${xdotool}"`,
+        'SENT=0',
+        'STRATEGY=""',
+        'WINDOW_IDS=""',
+        '',
+        '# Save current active window to restore focus later',
+        'ORIG_WID=$($XDOT getactivewindow 2>/dev/null || true)',
+      ];
+
+      // Strategy 1: Find terminal window via saved Claude Code PID
+      if (claudePid) {
+        scriptLines.push(
+          '',
+          '# Strategy 1: Saved Claude PID process tree walk',
+          `WALK_PID=${claudePid}`,
+          'if kill -0 "$WALK_PID" 2>/dev/null; then',
+          '  while [ -n "$WALK_PID" ] && [ "$WALK_PID" != "1" ] && [ "$WALK_PID" != "0" ]; do',
+          '    WIDS=$($XDOT search --pid "$WALK_PID" 2>/dev/null)',
+          '    if [ -n "$WIDS" ]; then',
+          '      WINDOW_IDS="$WIDS"',
+          '      STRATEGY="saved-pid"',
+          '      break',
+          '    fi',
+          '    WALK_PID=$(ps -o ppid= -p "$WALK_PID" 2>/dev/null | tr -d " ")',
+          '  done',
+          'fi',
+        );
+      }
+
+      // Strategy 2: Find live Claude Code processes
+      scriptLines.push(
+        '',
+        '# Strategy 2: Live Claude process discovery',
+        'if [ -z "$WINDOW_IDS" ]; then',
+        `  DAEMON_PID=${process.pid}`,
+        '  CLAUDE_PIDS=$(pgrep -f "claude-code|claude --" 2>/dev/null | grep -v "^$DAEMON_PID$" | grep -v "auto-resume-daemon" | head -10)',
+        '  for cpid in $CLAUDE_PIDS; do',
+        '    WALK_PID=$cpid',
+        '    while [ -n "$WALK_PID" ] && [ "$WALK_PID" != "1" ] && [ "$WALK_PID" != "0" ]; do',
+        '      WIDS=$($XDOT search --pid "$WALK_PID" 2>/dev/null)',
+        '      if [ -n "$WIDS" ]; then',
+        '        for wid in $WIDS; do',
+        '          case " $WINDOW_IDS " in',
+        '            *" $wid "*) ;;',
+        '            *) WINDOW_IDS="$WINDOW_IDS $wid" ;;',
+        '          esac',
+        '        done',
+        '        break',
+        '      fi',
+        '      WALK_PID=$(ps -o ppid= -p "$WALK_PID" 2>/dev/null | tr -d " ")',
+        '    done',
+        '  done',
+        '  WINDOW_IDS=$(echo $WINDOW_IDS | xargs)',
+        '  if [ -n "$WINDOW_IDS" ]; then',
+        '    STRATEGY="live-pid"',
+        '  fi',
+        'fi',
+      );
+
+      // Strategy 3: All terminal windows (fallback)
+      scriptLines.push(
+        '',
+        '# Strategy 3: All terminal windows (last resort)',
+        'if [ -z "$WINDOW_IDS" ]; then',
+        '  WINDOW_IDS=$($XDOT search --class "gnome-terminal|Gnome-terminal|konsole|Konsole|xterm|XTerm|terminator|Terminator|alacritty|Alacritty|kitty|Kitty|tilix|Tilix|foot|wezterm|WezTerm" 2>/dev/null)',
+        '  if [ -z "$WINDOW_IDS" ]; then',
+        '    WINDOW_IDS=$($XDOT search --name "Terminal|terminal|konsole|Konsole" 2>/dev/null)',
+        '  fi',
+        '  if [ -n "$WINDOW_IDS" ]; then',
+        '    STRATEGY="all-terminals"',
+        '  fi',
+        'fi',
+      );
+
+      // Send keystrokes
+      // IMPORTANT: Do NOT use --window flag with xdotool type/key.
+      // --window uses XSendEvent which gnome-terminal (and many apps) silently ignore.
+      // Without --window, xdotool uses XTEST extension which injects real keystrokes.
+      scriptLines.push(
+        '',
+        'if [ -z "$WINDOW_IDS" ]; then',
+        '  echo "ERROR: No terminal windows found"',
+        '  exit 1',
+        'fi',
+        '',
+        '# Filter to real terminal windows (must have WM_CLASS)',
+        'VALID_WIDS=""',
+        'for wid in $WINDOW_IDS; do',
+        '  if xprop -id "$wid" WM_CLASS 2>/dev/null | grep -q "not found"; then',
+        '    continue',
+        '  fi',
+        '  case " $VALID_WIDS " in',
+        '    *" $wid "*) ;;',
+        '    *) VALID_WIDS="$VALID_WIDS $wid" ;;',
+        '  esac',
+        'done',
+        'VALID_WIDS=$(echo $VALID_WIDS | xargs)',
+        '',
+        'if [ -z "$VALID_WIDS" ]; then',
+        '  echo "ERROR: No valid terminal windows found"',
+        '  exit 1',
+        'fi',
+        '',
+        '# Count terminal tabs: each bash child of gnome-terminal = one tab',
+        'TAB_COUNT=1',
+        'for wid in $VALID_WIDS; do',
+        '  WM_CLASS=$(xprop -id "$wid" WM_CLASS 2>/dev/null || true)',
+        '  case "$WM_CLASS" in',
+        '    *gnome-terminal*|*Gnome-terminal*)',
+        '      # Count bash children of gnome-terminal-server for tab count',
+        '      GT_PID=$(xprop -id "$wid" _NET_WM_PID 2>/dev/null | grep -oP "\\d+" || true)',
+        '      if [ -n "$GT_PID" ]; then',
+        '        TC=$(ps --ppid "$GT_PID" -o comm= 2>/dev/null | grep -c bash || true)',
+        '        if [ "$TC" -gt "$TAB_COUNT" ]; then TAB_COUNT=$TC; fi',
+        '      fi',
+        '      ;;',
+        '  esac',
+        'done',
+        '',
+        'for wid in $VALID_WIDS; do',
+        '  # Activate window (raises and focuses it) with timeout to prevent hangs',
+        '  timeout 2 $XDOT windowactivate --sync "$wid" 2>/dev/null || $XDOT windowfocus "$wid" 2>/dev/null',
+        '  sleep 0.3',
+        '',
+        '  # Cycle through all tabs in this window and send keystrokes to each',
+        '  TAB_IDX=0',
+        '  while [ "$TAB_IDX" -lt "$TAB_COUNT" ]; do',
+        '    if [ "$TAB_IDX" -gt 0 ]; then',
+        '      # Switch to next tab',
+        '      $XDOT key --clearmodifiers ctrl+Page_Down 2>/dev/null',
+        '      sleep 0.5',
+        '    fi',
+        '    # Use XTEST (no --window flag) so keystrokes are not ignored by terminal',
+        '    $XDOT key --clearmodifiers Escape 2>/dev/null',
+        '    sleep 0.3',
+        '    $XDOT key --clearmodifiers ctrl+u 2>/dev/null',
+        '    sleep 0.3',
+        '    $XDOT type --clearmodifiers --delay 50 "continue" 2>/dev/null',
+        '    sleep 0.2',
+        '    $XDOT key Return 2>/dev/null',
+        '    sleep 0.3',
+        '    SENT=$((SENT + 1))',
+        '    TAB_IDX=$((TAB_IDX + 1))',
+        '  done',
+        'done',
+        '',
+        '# Restore original window focus',
+        'if [ -n "$ORIG_WID" ]; then',
+        '  timeout 2 $XDOT windowactivate --sync "$ORIG_WID" 2>/dev/null || $XDOT windowfocus "$ORIG_WID" 2>/dev/null || true',
+        'fi',
+        '',
+        'echo "Sent to $SENT window(s) (strategy: $STRATEGY)"',
+        'exit 0',
+      );
+
+      fs.writeFileSync(tempScript, scriptLines.join('\n'), { mode: 0o755 });
+
+      exec(`/bin/sh "${tempScript}"`, { timeout: 30000 }, (err, stdout, stderr) => {
+        // Clean up temp file
+        try { fs.unlinkSync(tempScript); } catch (e) { /* ignore */ }
+
+        if (err) {
+          log('error', `Failed to send keystrokes: ${err.message}`);
+          if (stderr) log('debug', `stderr: ${stderr}`);
+          reject(err);
+        } else {
+          const output = stdout.trim();
+          if (output.startsWith('ERROR:')) {
+            log('error', output);
+            reject(new Error(output));
+          } else {
+            log('success', 'Sent: Escape, Ctrl+U, then continue + Enter to terminal windows');
+            if (output) log('info', output);
+            resolve();
+          }
+        }
+      });
+    });
+  });
+}
+
 /**
  * Send keystrokes to Claude Code terminals
  * Handles the rate limit recovery flow:
@@ -456,214 +682,39 @@ Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
         }
       });
     } else {
-      // Linux: Use xdotool to find and send to terminal windows
-      // Use which to find xdotool (more reliable across environments than command -v)
-      exec('which xdotool 2>/dev/null || command -v xdotool 2>/dev/null', (error, xdotoolPath) => {
-        const xdotool = xdotoolPath ? xdotoolPath.trim() : null;
-        if (error || !xdotool) {
-          log('error', 'xdotool not found. Please install it:');
-          log('info', '  Ubuntu/Debian: sudo apt-get install xdotool');
-          log('info', '  RHEL/CentOS: sudo yum install xdotool');
-          log('info', '  Arch: sudo pacman -S xdotool');
-          reject(new Error('xdotool not found'));
-          return;
-        }
-
-        log('debug', `Using xdotool at: ${xdotool}`);
-
-        // Read Claude PID from status file for targeted window finding
-        let claudePid = null;
-        try {
-          if (fs.existsSync(STATUS_FILE)) {
-            const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
-            claudePid = statusData.claude_pid;
+      // Linux: Use tiered delivery (tmux > PTY > xdotool)
+      // Read Claude PID from status file (supports both old format and queue format)
+      let claudePid = null;
+      try {
+        if (fs.existsSync(STATUS_FILE)) {
+          const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
+          claudePid = statusData.claude_pid;
+          if (!claudePid && statusData.queue) {
+            const active = statusData.queue.find(e => e.claude_pid);
+            if (active) claudePid = active.claude_pid;
           }
-        } catch (e) {
-          log('debug', 'Could not read claude_pid from status file');
         }
+      } catch (e) {
+        log('debug', 'Could not read claude_pid from status file');
+      }
 
-        // Write shell script to temp file to avoid exec escaping/buffer issues
-        const tempScript = path.join(os.tmpdir(), `claude-auto-resume-send-${process.pid}.sh`);
-        const scriptLines = [
-          '#!/bin/sh',
-          'set +e',
-          `XDOT="${xdotool}"`,
-          'SENT=0',
-          'STRATEGY=""',
-          'WINDOW_IDS=""',
-          '',
-          '# Save current active window to restore focus later',
-          'ORIG_WID=$($XDOT getactivewindow 2>/dev/null || true)',
-        ];
-
-        // Strategy 1: Find terminal window via saved Claude Code PID
-        if (claudePid) {
-          scriptLines.push(
-            '',
-            '# Strategy 1: Saved Claude PID process tree walk',
-            `WALK_PID=${claudePid}`,
-            'if kill -0 "$WALK_PID" 2>/dev/null; then',
-            '  while [ -n "$WALK_PID" ] && [ "$WALK_PID" != "1" ] && [ "$WALK_PID" != "0" ]; do',
-            '    WIDS=$($XDOT search --pid "$WALK_PID" 2>/dev/null)',
-            '    if [ -n "$WIDS" ]; then',
-            '      WINDOW_IDS="$WIDS"',
-            '      STRATEGY="saved-pid"',
-            '      break',
-            '    fi',
-            '    WALK_PID=$(ps -o ppid= -p "$WALK_PID" 2>/dev/null | tr -d " ")',
-            '  done',
-            'fi',
-          );
+      const resumeText = 'continue';
+      deliverResume({
+        claudePid,
+        resumeText,
+        log,
+        xdotoolFallback: () => sendContinueViaXdotool(claudePid),
+      }).then((result) => {
+        if (result.success) {
+          log('success', `Delivery succeeded via ${result.tier} (tried: ${result.tiersAttempted.join(', ')})`);
+          resolve();
+        } else {
+          log('error', `All delivery tiers failed: ${result.error} (tried: ${result.tiersAttempted.join(', ')})`);
+          reject(new Error(result.error || 'All delivery tiers failed'));
         }
-
-        // Strategy 2: Find live Claude Code processes
-        scriptLines.push(
-          '',
-          '# Strategy 2: Live Claude process discovery',
-          'if [ -z "$WINDOW_IDS" ]; then',
-          `  DAEMON_PID=${process.pid}`,
-          '  CLAUDE_PIDS=$(pgrep -f "claude-code|claude --" 2>/dev/null | grep -v "^$DAEMON_PID$" | grep -v "auto-resume-daemon" | head -10)',
-          '  for cpid in $CLAUDE_PIDS; do',
-          '    WALK_PID=$cpid',
-          '    while [ -n "$WALK_PID" ] && [ "$WALK_PID" != "1" ] && [ "$WALK_PID" != "0" ]; do',
-          '      WIDS=$($XDOT search --pid "$WALK_PID" 2>/dev/null)',
-          '      if [ -n "$WIDS" ]; then',
-          '        for wid in $WIDS; do',
-          '          case " $WINDOW_IDS " in',
-          '            *" $wid "*) ;;',
-          '            *) WINDOW_IDS="$WINDOW_IDS $wid" ;;',
-          '          esac',
-          '        done',
-          '        break',
-          '      fi',
-          '      WALK_PID=$(ps -o ppid= -p "$WALK_PID" 2>/dev/null | tr -d " ")',
-          '    done',
-          '  done',
-          '  WINDOW_IDS=$(echo $WINDOW_IDS | xargs)',
-          '  if [ -n "$WINDOW_IDS" ]; then',
-          '    STRATEGY="live-pid"',
-          '  fi',
-          'fi',
-        );
-
-        // Strategy 3: All terminal windows (fallback)
-        scriptLines.push(
-          '',
-          '# Strategy 3: All terminal windows (last resort)',
-          'if [ -z "$WINDOW_IDS" ]; then',
-          '  WINDOW_IDS=$($XDOT search --class "gnome-terminal|Gnome-terminal|konsole|Konsole|xterm|XTerm|terminator|Terminator|alacritty|Alacritty|kitty|Kitty|tilix|Tilix|foot|wezterm|WezTerm" 2>/dev/null)',
-          '  if [ -z "$WINDOW_IDS" ]; then',
-          '    WINDOW_IDS=$($XDOT search --name "Terminal|terminal|konsole|Konsole" 2>/dev/null)',
-          '  fi',
-          '  if [ -n "$WINDOW_IDS" ]; then',
-          '    STRATEGY="all-terminals"',
-          '  fi',
-          'fi',
-        );
-
-        // Send keystrokes
-        // IMPORTANT: Do NOT use --window flag with xdotool type/key.
-        // --window uses XSendEvent which gnome-terminal (and many apps) silently ignore.
-        // Without --window, xdotool uses XTEST extension which injects real keystrokes.
-        scriptLines.push(
-          '',
-          'if [ -z "$WINDOW_IDS" ]; then',
-          '  echo "ERROR: No terminal windows found"',
-          '  exit 1',
-          'fi',
-          '',
-          '# Filter to real terminal windows (must have WM_CLASS)',
-          'VALID_WIDS=""',
-          'for wid in $WINDOW_IDS; do',
-          '  if xprop -id "$wid" WM_CLASS 2>/dev/null | grep -q "not found"; then',
-          '    continue',
-          '  fi',
-          '  case " $VALID_WIDS " in',
-          '    *" $wid "*) ;;',
-          '    *) VALID_WIDS="$VALID_WIDS $wid" ;;',
-          '  esac',
-          'done',
-          'VALID_WIDS=$(echo $VALID_WIDS | xargs)',
-          '',
-          'if [ -z "$VALID_WIDS" ]; then',
-          '  echo "ERROR: No valid terminal windows found"',
-          '  exit 1',
-          'fi',
-          '',
-          '# Count terminal tabs: each bash child of gnome-terminal = one tab',
-          'TAB_COUNT=1',
-          'for wid in $VALID_WIDS; do',
-          '  WM_CLASS=$(xprop -id "$wid" WM_CLASS 2>/dev/null || true)',
-          '  case "$WM_CLASS" in',
-          '    *gnome-terminal*|*Gnome-terminal*)',
-          '      # Count bash children of gnome-terminal-server for tab count',
-          '      GT_PID=$(xprop -id "$wid" _NET_WM_PID 2>/dev/null | grep -oP "\\d+" || true)',
-          '      if [ -n "$GT_PID" ]; then',
-          '        TC=$(ps --ppid "$GT_PID" -o comm= 2>/dev/null | grep -c bash || true)',
-          '        if [ "$TC" -gt "$TAB_COUNT" ]; then TAB_COUNT=$TC; fi',
-          '      fi',
-          '      ;;',
-          '  esac',
-          'done',
-          '',
-          'for wid in $VALID_WIDS; do',
-          '  # Activate window (raises and focuses it) with timeout to prevent hangs',
-          '  timeout 2 $XDOT windowactivate --sync "$wid" 2>/dev/null || $XDOT windowfocus "$wid" 2>/dev/null',
-          '  sleep 0.3',
-          '',
-          '  # Cycle through all tabs in this window and send keystrokes to each',
-          '  TAB_IDX=0',
-          '  while [ "$TAB_IDX" -lt "$TAB_COUNT" ]; do',
-          '    if [ "$TAB_IDX" -gt 0 ]; then',
-          '      # Switch to next tab',
-          '      $XDOT key --clearmodifiers ctrl+Page_Down 2>/dev/null',
-          '      sleep 0.5',
-          '    fi',
-          '    # Use XTEST (no --window flag) so keystrokes are not ignored by terminal',
-          '    $XDOT key --clearmodifiers Escape 2>/dev/null',
-          '    sleep 0.3',
-          '    $XDOT key --clearmodifiers ctrl+u 2>/dev/null',
-          '    sleep 0.3',
-          '    $XDOT type --clearmodifiers --delay 50 "continue" 2>/dev/null',
-          '    sleep 0.2',
-          '    $XDOT key Return 2>/dev/null',
-          '    sleep 0.3',
-          '    SENT=$((SENT + 1))',
-          '    TAB_IDX=$((TAB_IDX + 1))',
-          '  done',
-          'done',
-          '',
-          '# Restore original window focus',
-          'if [ -n "$ORIG_WID" ]; then',
-          '  timeout 2 $XDOT windowactivate --sync "$ORIG_WID" 2>/dev/null || $XDOT windowfocus "$ORIG_WID" 2>/dev/null || true',
-          'fi',
-          '',
-          'echo "Sent to $SENT window(s) (strategy: $STRATEGY)"',
-          'exit 0',
-        );
-
-        fs.writeFileSync(tempScript, scriptLines.join('\n'), { mode: 0o755 });
-
-        exec(`/bin/sh "${tempScript}"`, { timeout: 30000 }, (err, stdout, stderr) => {
-          // Clean up temp file
-          try { fs.unlinkSync(tempScript); } catch (e) { /* ignore */ }
-
-          if (err) {
-            log('error', `Failed to send keystrokes: ${err.message}`);
-            if (stderr) log('debug', `stderr: ${stderr}`);
-            reject(err);
-          } else {
-            const output = stdout.trim();
-            if (output.startsWith('ERROR:')) {
-              log('error', output);
-              reject(new Error(output));
-            } else {
-              log('success', 'Sent: Escape, Ctrl+U, then continue + Enter to terminal windows');
-              if (output) log('info', output);
-              resolve();
-            }
-          }
-        });
+      }).catch((err) => {
+        log('error', `Tiered delivery error: ${err.message}`);
+        reject(err);
       });
     }
   });
@@ -692,12 +743,16 @@ function triggerResume() {
  */
 function clearStatus() {
   try {
-    if (fs.existsSync(STATUS_FILE)) {
+    if (currentQueueEntryId) {
+      const queue = new RateLimitQueue(STATUS_FILE);
+      queue.updateEntryStatus(currentQueueEntryId, 'completed');
+      currentQueueEntryId = null;
+    } else if (fs.existsSync(STATUS_FILE)) {
       fs.unlinkSync(STATUS_FILE);
-      log('debug', 'Status file cleared');
     }
+    log('debug', 'Status cleared');
   } catch (err) {
-    log('error', `Failed to clear status file: ${err.message}`);
+    log('error', `Failed to clear status: ${err.message}`);
   }
 }
 
@@ -813,6 +868,43 @@ async function attemptResume() {
 
     // Record the timestamp right after sending
     const sentAt = Date.now();
+
+    // Active verification: check for new transcript activity
+    let transcriptPath = null;
+    try {
+      if (fs.existsSync(STATUS_FILE)) {
+        const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
+        transcriptPath = statusData.transcript_path;
+        if (!transcriptPath && statusData.queue) {
+          const active = statusData.queue.find(e => e.transcript_path);
+          if (active) transcriptPath = active.transcript_path;
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    if (transcriptPath && fs.existsSync(transcriptPath)) {
+      log('info', 'Verifying resume via transcript activity...');
+      const baselineStats = fs.statSync(transcriptPath);
+      const verification = await verifyResumeByTranscript({
+        transcriptPath,
+        baselineMtime: baselineStats.mtimeMs,
+        baselineSize: baselineStats.size,
+        timeoutMs: getConfigValue('resume.activeVerificationTimeoutMs', 15000),
+        pollIntervalMs: getConfigValue('resume.activeVerificationPollMs', 1000),
+      });
+
+      if (verification.verified) {
+        log('success', `Auto-resume CONFIRMED! Transcript activity detected (+${verification.newBytes} bytes in ${verification.elapsedMs}ms)`);
+        sendNotification('Claude Code Resumed', 'Auto-resume successful after rate limit reset.');
+        clearStatus();
+        currentResetTime = null;
+        return;
+      } else {
+        log('warning', 'No transcript activity detected - delivery may have failed');
+        continue; // Try next attempt
+      }
+    }
+    // If no transcript path, fall through to existing passive verification
 
     // Watch for re-detection within the verification window
     log('info', `Verifying resume for ${verificationWindowSec}s...`);
@@ -1003,7 +1095,37 @@ function watchStatusFile() {
 
       lastStatusMtime = currentMtime;
 
-      // Read and parse status
+      // Try queue-based reading first
+      const queue = new RateLimitQueue(STATUS_FILE);
+      const nextEntry = queue.getNextPending();
+
+      if (nextEntry) {
+        const resetTime = new Date(nextEntry.reset_time);
+        if (isNaN(resetTime.getTime())) {
+          log('error', `Invalid reset_time in queue: ${nextEntry.reset_time}`);
+          return;
+        }
+        if (!currentResetTime || currentResetTime.getTime() !== resetTime.getTime()) {
+          log('warning', '');
+          log('warning', 'Rate limit detected!');
+          log('info', `Reset time: ${resetTime.toLocaleString()}`);
+          log('info', `Message: ${nextEntry.message || 'N/A'}`);
+          currentQueueEntryId = nextEntry.id;
+
+          if (dashboard) {
+            dashboard.updateDaemonStatus({
+              detected: true,
+              reset_time: nextEntry.reset_time,
+              message: nextEntry.message || 'Rate limit detected'
+            });
+          }
+
+          startCountdown(resetTime);
+        }
+        return; // Queue handled it, skip old-format reading
+      }
+
+      // Read and parse status (old format fallback)
       const status = readStatus();
 
       if (!status) {
