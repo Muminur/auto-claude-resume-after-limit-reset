@@ -1,0 +1,6 @@
+node_modules/
+daemon.log
+daemon.pid
+heartbeat.json
+status.json
+.last-start
