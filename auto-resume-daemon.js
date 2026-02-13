@@ -1206,6 +1206,12 @@ function startTranscriptPolling() {
  * Start daemon
  */
 function startDaemon() {
+  // Dry-run mode for CLI tests: validate command routing without starting daemon
+  if (process.env.DAEMON_DRY_RUN === '1') {
+    log('info', 'Dry run mode — exiting cleanly');
+    process.exit(0);
+  }
+
   // Crash-loop self-protection: refuse to start if we crashed too recently
   // This prevents rapid restart loops even without systemd StartLimitBurst
   const crashLockFile = path.join(BASE_DIR, '.last-start');
