@@ -5,7 +5,9 @@
   "logLevel": "info",
   "notifications": {
     "enabled": true,
-    "sound": false
+    "sound": false,
+    "onSuccess": true,
+    "onFailure": true
   },
   "websocket": {
     "enabled": false,
@@ -31,6 +33,8 @@
   "resume": {
     "postResetDelaySec": 10,
     "maxRetries": 4,
-    "verificationWindowSec": 90
+    "verificationWindowSec": 90,
+    "activeVerificationTimeoutMs": 15000,
+    "activeVerificationPollMs": 1000
   }
 }
