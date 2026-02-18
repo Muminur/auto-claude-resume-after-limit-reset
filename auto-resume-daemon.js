@@ -1053,8 +1053,15 @@ function initialStatusCheck() {
       log('info', `Rate limit active. Resuming in ${formatted}...`);
       startCountdown(resetTime);
     } else {
-      // Reset time has already passed - trigger resume immediately
-      log('info', 'Reset time already passed, triggering resume immediately');
+      // Reset time has already passed - check if it's stale
+      const staleThresholdMs = getConfigValue('daemon.staleThresholdHours', 2) * 60 * 60 * 1000;
+      if (isResetTimeStale(status.reset_time, staleThresholdMs)) {
+        log('info', 'Stale rate limit status found on startup (reset_time > 2h ago), clearing');
+        clearStatus();
+        return;
+      }
+      // Recently passed - trigger resume immediately
+      log('info', 'Reset time recently passed, triggering resume immediately');
       sendContinueToTerminals()
         .then(() => {
           log('success', 'Auto-resume completed for past rate limit!');
@@ -1105,6 +1112,13 @@ function watchStatusFile() {
           log('error', `Invalid reset_time in queue: ${nextEntry.reset_time}`);
           return;
         }
+        // Guard: reject stale queue entries
+        const staleThresholdMs = getConfigValue('daemon.staleThresholdHours', 2) * 60 * 60 * 1000;
+        if (isResetTimeStale(nextEntry.reset_time, staleThresholdMs)) {
+          log('info', 'Stale rate limit in queue (reset_time > 2h ago), marking completed');
+          queue.updateEntryStatus(nextEntry.id, 'completed');
+          return;
+        }
         if (!currentResetTime || currentResetTime.getTime() !== resetTime.getTime()) {
           log('warning', '');
           log('warning', 'Rate limit detected!');
@@ -1138,6 +1152,14 @@ function watchStatusFile() {
 
         if (isNaN(resetTime.getTime())) {
           log('error', `Invalid reset_time in status file: ${status.reset_time}`);
+          return;
+        }
+
+        // Guard: reject stale reset times to prevent re-detection loops
+        const staleThresholdMs = getConfigValue('daemon.staleThresholdHours', 2) * 60 * 60 * 1000;
+        if (isResetTimeStale(status.reset_time, staleThresholdMs)) {
+          log('info', 'Stale rate limit detected in status file (reset_time > 2h ago), auto-clearing');
+          clearStatus();
           return;
         }
 
@@ -1304,6 +1326,12 @@ function startTranscriptPolling() {
 
       const result = await analyzeTranscript(latestFile);
       if (result && result.detected) {
+        // Guard: reject stale reset times to prevent re-detection of old rate limits
+        const staleThresholdMs = getConfigValue('daemon.staleThresholdHours', 2) * 60 * 60 * 1000;
+        if (isResetTimeStale(result.reset_time, staleThresholdMs)) {
+          log('debug', '[POLL] Ignoring stale rate limit (reset_time is more than 2h in the past)');
+          return;
+        }
         log('warning', '[POLL] Rate limit detected via transcript polling (Stop hook may have missed it)');
         // Write to status file so the normal countdown flow picks it up
         const statusData = {
@@ -2097,9 +2125,23 @@ function main() {
   }
 }
 
+/**
+ * Check if a reset time is stale (too far in the past to act on).
+ * Used by transcript poll and status watcher to reject old rate limit detections.
+ * @param {string|null|undefined} resetTimeISO - ISO 8601 timestamp of the reset time
+ * @param {number} thresholdMs - Maximum age in milliseconds (default: 2 hours)
+ * @returns {boolean} true if the reset time is stale and should be ignored
+ */
+function isResetTimeStale(resetTimeISO, thresholdMs) {
+  if (!resetTimeISO) return true;
+  const resetTime = new Date(resetTimeISO);
+  if (isNaN(resetTime.getTime())) return true;
+  return resetTime.getTime() <= Date.now() - thresholdMs;
+}
+
 // Run main if called directly, allow importing for tests
 if (require.main === module) {
   main();
 }
 
-module.exports = { main };
+module.exports = { main, isResetTimeStale };
