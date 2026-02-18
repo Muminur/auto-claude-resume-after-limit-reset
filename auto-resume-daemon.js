@@ -1115,8 +1115,8 @@ function watchStatusFile() {
         // Guard: reject stale queue entries
         const staleThresholdMs = getConfigValue('daemon.staleThresholdHours', 2) * 60 * 60 * 1000;
         if (isResetTimeStale(nextEntry.reset_time, staleThresholdMs)) {
-          log('info', 'Stale rate limit in queue (reset_time > 2h ago), marking completed');
-          queue.updateEntryStatus(nextEntry.id, 'completed');
+          log('info', 'Stale rate limit detected (reset_time > 2h ago), clearing status file');
+          try { fs.unlinkSync(STATUS_FILE); } catch (e) { /* ignore */ }
           return;
         }
         if (!currentResetTime || currentResetTime.getTime() !== resetTime.getTime()) {
