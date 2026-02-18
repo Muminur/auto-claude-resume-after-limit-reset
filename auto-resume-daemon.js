@@ -866,6 +866,11 @@ async function attemptResume() {
       continue;
     }
 
+    // Clear status IMMEDIATELY after successful delivery to prevent re-firing
+    log('info', 'Keystrokes delivered, clearing status to prevent duplicate sends');
+    clearStatus();
+    currentResetTime = null;
+
     // Record the timestamp right after sending
     const sentAt = Date.now();
 
@@ -2144,4 +2149,12 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { main, isResetTimeStale };
+/**
+ * Returns true if status should be cleared before verification (immediately after send).
+ * Exported for testing.
+ */
+function shouldClearBeforeVerification() {
+  return true;
+}
+
+module.exports = { main, isResetTimeStale, shouldClearBeforeVerification };
