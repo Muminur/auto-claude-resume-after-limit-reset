@@ -1,4 +1,4 @@
-const { detectTmuxSession, sendViaTmux } = require('./tmux-delivery');
+const { detectTmuxSession, sendViaTmux, findAllClaudePanes, sendToAllPanes } = require('./tmux-delivery');
 const { resolvePty, sendViaPty } = require('./pty-delivery');
 
 const TIER = {
@@ -23,18 +23,23 @@ async function deliverResume(opts) {
   const tiersAttempted = [];
   let lastError = null;
 
-  // Tier 1: tmux
+  // Tier 1: tmux (multi-pane: find ALL panes running Claude)
   try {
-    log('debug', `Tier 1 (tmux): checking PID ${claudePid}...`);
+    log('debug', `Tier 1 (tmux): scanning all panes for Claude processes...`);
     tiersAttempted.push(TIER.TMUX);
-    const sessionName = await detectTmuxSession(claudePid);
-    if (sessionName) {
-      log('info', `Tier 1 (tmux): found session "${sessionName}", sending keys...`);
-      await sendViaTmux(sessionName, resumeText);
-      log('success', `Tier 1 (tmux): sent "${resumeText}" to session "${sessionName}"`);
-      return { success: true, tier: TIER.TMUX, error: null, tiersAttempted };
+    const claudePanes = await findAllClaudePanes();
+    if (claudePanes.length > 0) {
+      log('info', `Tier 1 (tmux): found ${claudePanes.length} Claude pane(s): ${claudePanes.map(p => p.target).join(', ')}`);
+      const result = await sendToAllPanes(resumeText, claudePanes);
+      log('success', `Tier 1 (tmux): sent to ${result.sent}/${claudePanes.length} panes`);
+      if (result.failed > 0) {
+        log('warning', `Tier 1 (tmux): ${result.failed} pane(s) failed: ${result.errors.join('; ')}`);
+      }
+      if (result.sent > 0) {
+        return { success: true, tier: TIER.TMUX, error: null, tiersAttempted };
+      }
     } else {
-      log('debug', 'Tier 1 (tmux): PID not in any tmux session, skipping');
+      log('debug', 'Tier 1 (tmux): no Claude panes found, skipping');
     }
   } catch (err) {
     lastError = err.message;

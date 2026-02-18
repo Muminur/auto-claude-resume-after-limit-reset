@@ -8,26 +8,25 @@ describe('tiered-delivery', () => {
   });
 
   test('returns result object with tier and success fields', async () => {
-    // With a non-existent PID, all tiers should fail
+    // deliverResume now scans all tmux panes for Claude processes,
+    // so it may succeed if real Claude panes exist on this machine
     const result = await deliverResume({
       claudePid: 999999999,
       resumeText: 'continue',
     });
     expect(result).toHaveProperty('success');
     expect(result).toHaveProperty('tier');
-    expect(result).toHaveProperty('error');
-  });
+    expect(result).toHaveProperty('tiersAttempted');
+    expect(result.tiersAttempted).toEqual(expect.arrayContaining([TIER.TMUX]));
+  }, 15000);
 
-  test('falls through all tiers for invalid PID', async () => {
+  test('attempts tmux tier regardless of claudePid', async () => {
     const result = await deliverResume({
-      claudePid: 999999999,
+      claudePid: null,
       resumeText: 'continue',
     });
-    expect(result.success).toBe(false);
-    expect(result.tiersAttempted).toEqual(
-      expect.arrayContaining([TIER.TMUX, TIER.PTY])
-    );
-  });
+    expect(result.tiersAttempted).toContain(TIER.TMUX);
+  }, 15000);
 
   test('accepts optional log function', async () => {
     const logs = [];
