@@ -94,6 +94,7 @@ let lastStatusMtime = null;
 let isBackgroundMode = false;  // Track if running detached (no stdout)
 let dashboard = null;  // Dashboard integration instance
 let currentQueueEntryId = null;
+let _isResumeInProgress = false;
 
 /**
  * Safe stdout write - handles EPIPE errors when running detached
@@ -848,6 +849,13 @@ async function sendWithRetry(maxRetries = 3, retryDelaySec = 10) {
  * If rate limit re-appears, retries with exponential backoff.
  */
 async function attemptResume() {
+  if (_isResumeInProgress) {
+    log('info', 'Resume already in progress, skipping duplicate attemptResume() call');
+    return;
+  }
+  _isResumeInProgress = true;
+
+  try {
   const maxRetries = getConfigValue('resume.maxRetries', 4);
   const verificationWindowSec = getConfigValue('resume.verificationWindowSec', 90);
   const backoffDelays = [10, 20, 40, 60]; // seconds between resume retries
@@ -867,9 +875,10 @@ async function attemptResume() {
     }
 
     // Clear status IMMEDIATELY after successful delivery to prevent re-firing
+    // NOTE: Do NOT clear currentResetTime here — it guards watchStatusFile()
+    // from starting new countdowns. It gets cleared in stopCountdown() later.
     log('info', 'Keystrokes delivered, clearing status to prevent duplicate sends');
     clearStatus();
-    currentResetTime = null;
 
     // Record the timestamp right after sending
     const sentAt = Date.now();
@@ -960,12 +969,19 @@ async function attemptResume() {
       // Best effort
     }
   }
+  } finally {
+    _isResumeInProgress = false;
+  }
 }
 
 /**
  * Start countdown timer display
  */
 function startCountdown(resetTime) {
+  if (_isResumeInProgress) {
+    log('info', 'Resume in progress, ignoring new countdown request');
+    return;
+  }
   if (countdownInterval) {
     clearInterval(countdownInterval);
   }
@@ -1087,6 +1103,9 @@ function initialStatusCheck() {
 function watchStatusFile() {
   // Check status file every second
   watchInterval = setInterval(() => {
+    if (_isResumeInProgress) {
+      return; // Don't process status changes while resume is active
+    }
     try {
       if (!fs.existsSync(STATUS_FILE)) {
         // No status file, stop countdown if running
@@ -2157,4 +2176,12 @@ function shouldClearBeforeVerification() {
   return true;
 }
 
-module.exports = { main, isResetTimeStale, shouldClearBeforeVerification };
+function isResumeInProgress() {
+  return _isResumeInProgress;
+}
+
+function setResumeInProgress(val) {
+  _isResumeInProgress = !!val;
+}
+
+module.exports = { main, isResetTimeStale, shouldClearBeforeVerification, isResumeInProgress, setResumeInProgress };
