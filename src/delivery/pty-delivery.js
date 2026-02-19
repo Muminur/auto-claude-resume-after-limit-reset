@@ -26,8 +26,9 @@ async function sendViaPty(ptyPath, text) {
       // Send Ctrl+U (0x15) to clear line
       fs.writeSync(fd, Buffer.from([0x15]));
 
-      // Send the text followed by Enter (0x0A)
-      fs.writeSync(fd, text + '\n');
+      // Send the text followed by Enter (0x0D carriage return, NOT 0x0A linefeed)
+      // Claude Code TUI requires \r to submit; \n only adds a newline without submitting
+      fs.writeSync(fd, text + '\r');
 
       fs.closeSync(fd);
       resolve();

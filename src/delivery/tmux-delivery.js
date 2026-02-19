@@ -229,4 +229,32 @@ async function sendKeystrokeSequence(paneTarget, sequence) {
   }
 }
 
-module.exports = { detectTmuxSession, sendViaTmux, walkProcessTree, getParentPid, findAllClaudePanes, sendToAllPanes, buildResumeSequence, sendKeystrokeSequence };
+/**
+ * Find the tmux pane(s) to target for resume delivery.
+ *
+ * When claudePid is provided (from status.json), walks the process tree to find
+ * the exact pane running that Claude instance — avoids sending to ALL Claude panes
+ * including unrelated active sessions.
+ *
+ * Falls back to findAllClaudePanes() when no specific PID is known or when the
+ * specific pane cannot be located.
+ *
+ * @param {number|null} claudePid - PID from status.json, or null
+ * @returns {Promise<Array<{target: string, pid: number, command: string}>>}
+ */
+async function findClaudeTargetPanes(claudePid) {
+  if (claudePid) {
+    try {
+      const sessionName = await detectTmuxSession(claudePid);
+      if (sessionName) {
+        return [{ target: sessionName, pid: claudePid, command: 'claude' }];
+      }
+    } catch (_err) {
+      // Fall through to broad scan
+    }
+  }
+  // No specific PID or pane not found — scan all Claude panes
+  return findAllClaudePanes();
+}
+
+module.exports = { detectTmuxSession, sendViaTmux, walkProcessTree, getParentPid, findAllClaudePanes, findClaudeTargetPanes, sendToAllPanes, buildResumeSequence, sendKeystrokeSequence };

@@ -1,4 +1,4 @@
-const { findAllClaudePanes, sendToAllPanes } = require('../../src/delivery/tmux-delivery');
+const { findAllClaudePanes, sendToAllPanes, findClaudeTargetPanes } = require('../../src/delivery/tmux-delivery');
 
 describe('tmux multi-pane delivery', () => {
   describe('findAllClaudePanes', () => {
@@ -51,5 +51,35 @@ describe('tmux multi-pane delivery', () => {
       expect(result).toHaveProperty('failed');
       expect(result.sent + result.failed).toBe(2);
     });
+  });
+});
+
+describe('findClaudeTargetPanes', () => {
+  it('should be a function', () => {
+    expect(typeof findClaudeTargetPanes).toBe('function');
+  });
+
+  it('returns an array', async () => {
+    const result = await findClaudeTargetPanes(null);
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('with null pid, falls back to findAllClaudePanes result shape', async () => {
+    const result = await findClaudeTargetPanes(null);
+    for (const pane of result) {
+      expect(pane).toHaveProperty('target');
+      expect(pane).toHaveProperty('pid');
+    }
+  });
+
+  it('with non-existent pid, falls back to findAllClaudePanes (does not throw)', async () => {
+    // PID 999999999 won't be in any tmux session
+    const result = await findClaudeTargetPanes(999999999);
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('with own pid, returns panes reachable from that pid without throwing', async () => {
+    const result = await findClaudeTargetPanes(process.pid);
+    expect(Array.isArray(result)).toBe(true);
   });
 });

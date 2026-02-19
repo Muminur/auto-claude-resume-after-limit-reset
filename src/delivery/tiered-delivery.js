@@ -1,4 +1,4 @@
-const { detectTmuxSession, sendViaTmux, findAllClaudePanes, sendToAllPanes } = require('./tmux-delivery');
+const { detectTmuxSession, sendViaTmux, findAllClaudePanes, findClaudeTargetPanes, sendToAllPanes } = require('./tmux-delivery');
 const { resolvePty, sendViaPty } = require('./pty-delivery');
 
 const TIER = {
@@ -23,11 +23,12 @@ async function deliverResume(opts) {
   const tiersAttempted = [];
   let lastError = null;
 
-  // Tier 1: tmux (multi-pane: find ALL panes running Claude)
+  // Tier 1: tmux — target specific pane when claudePid is known, else scan all Claude panes
   try {
-    log('debug', `Tier 1 (tmux): scanning all panes for Claude processes...`);
+    const scanDesc = claudePid ? `pane for PID ${claudePid}` : 'all panes for Claude processes';
+    log('debug', `Tier 1 (tmux): finding ${scanDesc}...`);
     tiersAttempted.push(TIER.TMUX);
-    const claudePanes = await findAllClaudePanes();
+    const claudePanes = await findClaudeTargetPanes(claudePid);
     if (claudePanes.length > 0) {
       log('info', `Tier 1 (tmux): found ${claudePanes.length} Claude pane(s): ${claudePanes.map(p => p.target).join(', ')}`);
       const result = await sendToAllPanes(resumeText, claudePanes, { menuSelection });
