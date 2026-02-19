@@ -699,10 +699,12 @@ Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
         log('debug', 'Could not read claude_pid from status file');
       }
 
-      const resumeText = 'continue';
+      const resumeText = getConfigValue('resumePrompt', 'continue');
+      const menuSelection = getConfigValue('menuSelection', '1');
       deliverResume({
         claudePid,
         resumeText,
+        menuSelection,
         log,
         xdotoolFallback: () => sendContinueViaXdotool(claudePid),
       }).then((result) => {

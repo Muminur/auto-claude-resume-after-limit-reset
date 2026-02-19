@@ -18,7 +18,7 @@ describe('tiered-delivery', () => {
     expect(result).toHaveProperty('tier');
     expect(result).toHaveProperty('tiersAttempted');
     expect(result.tiersAttempted).toEqual(expect.arrayContaining([TIER.TMUX]));
-  }, 15000);
+  }, 30000);
 
   test('attempts tmux tier regardless of claudePid', async () => {
     const result = await deliverResume({
@@ -26,7 +26,7 @@ describe('tiered-delivery', () => {
       resumeText: 'continue',
     });
     expect(result.tiersAttempted).toContain(TIER.TMUX);
-  }, 15000);
+  }, 30000);
 
   test('accepts optional log function', async () => {
     const logs = [];
@@ -40,5 +40,5 @@ describe('tiered-delivery', () => {
 
     expect(logs.length).toBeGreaterThan(0);
     expect(logs.some(l => l.msg.includes('tmux'))).toBe(true);
-  });
+  }, 30000);
 });

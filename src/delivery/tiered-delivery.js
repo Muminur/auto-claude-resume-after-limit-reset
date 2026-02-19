@@ -19,7 +19,7 @@ const TIER = {
  * @returns {Promise<{success: boolean, tier: string|null, error: string|null, tiersAttempted: string[]}>}
  */
 async function deliverResume(opts) {
-  const { claudePid, resumeText = 'continue', log = () => {}, xdotoolFallback = null } = opts;
+  const { claudePid, resumeText = 'continue', menuSelection, log = () => {}, xdotoolFallback = null } = opts;
   const tiersAttempted = [];
   let lastError = null;
 
@@ -30,7 +30,7 @@ async function deliverResume(opts) {
     const claudePanes = await findAllClaudePanes();
     if (claudePanes.length > 0) {
       log('info', `Tier 1 (tmux): found ${claudePanes.length} Claude pane(s): ${claudePanes.map(p => p.target).join(', ')}`);
-      const result = await sendToAllPanes(resumeText, claudePanes);
+      const result = await sendToAllPanes(resumeText, claudePanes, { menuSelection });
       log('success', `Tier 1 (tmux): sent to ${result.sent}/${claudePanes.length} panes`);
       if (result.failed > 0) {
         log('warning', `Tier 1 (tmux): ${result.failed} pane(s) failed: ${result.errors.join('; ')}`);

@@ -149,18 +149,27 @@ function hasClaudeChild(pid) {
 
 /**
  * Send resume keystrokes to ALL provided tmux panes.
+ * Uses the new keystroke sequence with delays for reliable delivery.
+ *
  * @param {string} text - Text to send (e.g. "continue")
  * @param {Array<{target: string}>} panes - Panes to send to
+ * @param {Object} [opts] - Options
+ * @param {string} [opts.menuSelection] - Menu option key (default: '1')
  * @returns {Promise<{sent: number, failed: number, errors: string[]}>}
  */
-async function sendToAllPanes(text, panes) {
+async function sendToAllPanes(text, panes, opts = {}) {
+  const sequence = buildResumeSequence({
+    menuSelection: opts.menuSelection,
+    resumePrompt: text,
+  });
+
   let sent = 0;
   let failed = 0;
   const errors = [];
 
   for (const pane of panes) {
     try {
-      await sendViaTmux(pane.target, text);
+      await sendKeystrokeSequence(pane.target, sequence);
       sent++;
     } catch (err) {
       failed++;
@@ -171,4 +180,53 @@ async function sendToAllPanes(text, panes) {
   return { sent, failed, errors };
 }
 
-module.exports = { detectTmuxSession, sendViaTmux, walkProcessTree, getParentPid, findAllClaudePanes, sendToAllPanes };
+/**
+ * Build a keystroke sequence for resuming Claude Code after rate limit.
+ * Two-phase approach: (1) try menu option selection, (2) fall back to text input.
+ *
+ * @param {Object} opts
+ * @param {string} [opts.menuSelection='1'] - Menu option key to press
+ * @param {string} [opts.resumePrompt='continue'] - Text to type as fallback
+ * @returns {Array<{keys: string[], delay: number}>}
+ */
+function buildResumeSequence(opts = {}) {
+  const menuSelection = opts.menuSelection || '1';
+  const resumePrompt = opts.resumePrompt || 'continue';
+
+  return [
+    // Phase 1: Dismiss any dialog/state
+    { keys: ['Escape'], delay: 500 },
+    { keys: ['Escape'], delay: 300 },
+    // Phase 2: Try menu option selection (works when rate limit dialog is showing)
+    { keys: [menuSelection], delay: 1000 },
+    // Phase 3: Fallback - dismiss again and try text input
+    { keys: ['Escape'], delay: 500 },
+    { keys: ['Escape'], delay: 300 },
+    { keys: ['C-u'], delay: 200 },
+    { keys: [resumePrompt], delay: 200 },
+    { keys: ['Enter'], delay: 0 },
+  ];
+}
+
+/**
+ * Send a keystroke sequence to a tmux pane with delays between steps.
+ *
+ * @param {string} paneTarget - tmux pane target (e.g. "2:0.0")
+ * @param {Array<{keys: string[], delay: number}>} sequence - Steps to execute
+ * @returns {Promise<void>}
+ */
+async function sendKeystrokeSequence(paneTarget, sequence) {
+  for (const step of sequence) {
+    await new Promise((resolve, reject) => {
+      execFile('tmux', ['send-keys', '-t', paneTarget, ...step.keys], (err) => {
+        if (err) return reject(new Error(`tmux send-keys failed: ${err.message}`));
+        resolve();
+      });
+    });
+    if (step.delay > 0) {
+      await new Promise(resolve => setTimeout(resolve, step.delay));
+    }
+  }
+}
+
+module.exports = { detectTmuxSession, sendViaTmux, walkProcessTree, getParentPid, findAllClaudePanes, sendToAllPanes, buildResumeSequence, sendKeystrokeSequence };
