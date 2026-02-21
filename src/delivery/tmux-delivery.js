@@ -260,35 +260,59 @@ async function findClaudeTargetPanes(claudePid) {
 
 async function discoverAllClaudeProcesses() {
   const pids = await new Promise((resolve) => {
-    execFile('pgrep', ['-x', 'claude'], (err, stdout) => {
+    execFile('ps', ['-eo', 'pid,comm', '--no-headers'], (err, stdout) => {
       if (err || !stdout.trim()) return resolve([]);
-      resolve(
-        stdout.trim().split('\n')
-          .map(s => parseInt(s.trim(), 10))
-          .filter(n => !isNaN(n))
-      );
+      const claudePatterns = /^(claude|node|2\.\d+\.\d+)$/i;
+      const candidates = [];
+      for (const line of stdout.trim().split('\n')) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 2) continue;
+        const pid = parseInt(parts[0], 10);
+        const comm = parts.slice(1).join(' ');
+        if (!isNaN(pid) && claudePatterns.test(comm)) {
+          candidates.push({ pid, comm });
+        }
+      }
+      resolve(candidates);
     });
   });
 
   if (pids.length === 0) return [];
 
+  // For direct claude matches, use the PID directly.
+  // For node/versioned binaries, check if they have a claude child process.
+  const claudePids = [];
+  for (const { pid, comm } of pids) {
+    if (/^claude$/i.test(comm)) {
+      claudePids.push(pid);
+    } else {
+      const found = await hasClaudeChild(pid);
+      if (found) claudePids.push(pid);
+    }
+  }
+
+  if (claudePids.length === 0) return [];
+
   const paneMap = await new Promise((resolve) => {
-    execFile('tmux', [
-      'list-panes', '-a', '-F',
-      '#{pane_pid} #{session_name}:#{window_index}.#{pane_index}'
-    ], (err, stdout) => {
-      if (err || !stdout || !stdout.trim()) return resolve(new Map());
-      const map = new Map();
-      for (const line of stdout.trim().split('\n')) {
-        const [panePid, target] = line.trim().split(' ', 2);
-        if (panePid && target) map.set(parseInt(panePid, 10), target);
-      }
-      resolve(map);
+    execFile('which', ['tmux'], (err, tmuxPath) => {
+      if (err || !tmuxPath || !tmuxPath.trim()) return resolve(new Map());
+      execFile('tmux', [
+        'list-panes', '-a', '-F',
+        '#{pane_pid} #{session_name}:#{window_index}.#{pane_index}'
+      ], (err2, stdout) => {
+        if (err2 || !stdout || !stdout.trim()) return resolve(new Map());
+        const map = new Map();
+        for (const line of stdout.trim().split('\n')) {
+          const [panePid, target] = line.trim().split(' ', 2);
+          if (panePid && target) map.set(parseInt(panePid, 10), target);
+        }
+        resolve(map);
+      });
     });
   });
 
   const results = [];
-  for (const pid of pids) {
+  for (const pid of claudePids) {
     const tmuxTarget = await walkProcessTree(pid, paneMap);
     if (tmuxTarget) {
       results.push({ pid, method: 'tmux', target: tmuxTarget });
