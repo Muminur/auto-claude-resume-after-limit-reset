@@ -1,5 +1,5 @@
-const { detectTmuxSession, sendViaTmux, findAllClaudePanes, findClaudeTargetPanes, sendToAllPanes } = require('./tmux-delivery');
-const { resolvePty, sendViaPty } = require('./pty-delivery');
+const { discoverAllClaudeProcesses, sendKeystrokeSequence, buildResumeSequence } = require('./tmux-delivery');
+const { sendViaPty } = require('./pty-delivery');
 
 const TIER = {
   TMUX: 'tmux',
@@ -8,85 +8,90 @@ const TIER = {
 };
 
 /**
- * Deliver resume keystrokes using the best available method.
- * Tries tiers in order: tmux > PTY write > xdotool.
+ * Deliver resume keystrokes to ALL running Claude Code processes.
+ * Discovers processes via ps/pgrep, classifies each as tmux or PTY, delivers to each.
+ * Rate limits are account-level so all instances need the resume signal.
  *
  * @param {Object} opts
- * @param {number} opts.claudePid - Claude Code process PID
- * @param {string} opts.resumeText - Text to send (default: "continue")
+ * @param {string} [opts.resumeText='continue'] - Text to send as fallback prompt
+ * @param {string} [opts.menuSelection='1'] - Menu option key to press
  * @param {Function} [opts.log] - Logging function(level, message)
- * @param {Function} [opts.xdotoolFallback] - Existing xdotool function for Tier 3
- * @returns {Promise<{success: boolean, tier: string|null, error: string|null, tiersAttempted: string[]}>}
+ * @param {Function} [opts.xdotoolFallback] - Fallback when no processes found/delivered
+ * @param {Function} [opts._discoverer] - Override discovery function (for testing)
+ * @returns {Promise<{success: boolean, tiersAttempted: string[], targets: Array, error: string|null}>}
  */
-async function deliverResume(opts) {
-  const { claudePid, resumeText = 'continue', menuSelection, log = () => {}, xdotoolFallback = null } = opts;
-  const tiersAttempted = [];
+async function deliverResume(opts = {}) {
+  const {
+    resumeText = 'continue',
+    menuSelection = '1',
+    log = () => {},
+    xdotoolFallback = null,
+    _discoverer = discoverAllClaudeProcesses,
+  } = opts;
+
+  const tiersAttempted = [TIER.TMUX]; // discovery always attempts tmux classification
+  const targets = [];
+  let anySuccess = false;
   let lastError = null;
 
-  // Tier 1: tmux — target specific pane when claudePid is known, else scan all Claude panes
+  // Discover all Claude processes
+  log('debug', 'Discovering all running claude processes...');
+  let processes = [];
   try {
-    const scanDesc = claudePid ? `pane for PID ${claudePid}` : 'all panes for Claude processes';
-    log('debug', `Tier 1 (tmux): finding ${scanDesc}...`);
-    tiersAttempted.push(TIER.TMUX);
-    const claudePanes = await findClaudeTargetPanes(claudePid);
-    if (claudePanes.length > 0) {
-      log('info', `Tier 1 (tmux): found ${claudePanes.length} Claude pane(s): ${claudePanes.map(p => p.target).join(', ')}`);
-      const result = await sendToAllPanes(resumeText, claudePanes, { menuSelection });
-      log('success', `Tier 1 (tmux): sent to ${result.sent}/${claudePanes.length} panes`);
-      if (result.failed > 0) {
-        log('warning', `Tier 1 (tmux): ${result.failed} pane(s) failed: ${result.errors.join('; ')}`);
-      }
-      if (result.sent > 0) {
-        return { success: true, tier: TIER.TMUX, error: null, tiersAttempted };
-      }
-    } else {
-      log('debug', 'Tier 1 (tmux): no Claude panes found, skipping');
-    }
+    processes = await _discoverer();
+    log('info', `Found ${processes.length} claude process(es): ${
+      processes.map(p => `PID ${p.pid} (${p.method})`).join(', ') || 'none'
+    }`);
   } catch (err) {
     lastError = err.message;
-    log('warning', `Tier 1 (tmux) failed: ${err.message}`);
+    log('warning', `Process discovery failed: ${err.message}`);
   }
 
-  // Tier 2: PTY write
-  try {
-    log('debug', `Tier 2 (PTY): resolving PTY for PID ${claudePid}...`);
-    tiersAttempted.push(TIER.PTY);
-    const ptyPath = await resolvePty(claudePid);
-    if (ptyPath) {
-      log('info', `Tier 2 (PTY): found ${ptyPath}, writing directly...`);
-      await sendViaPty(ptyPath, resumeText);
-      log('success', `Tier 2 (PTY): sent "${resumeText}" to ${ptyPath}`);
-      return { success: true, tier: TIER.PTY, error: null, tiersAttempted };
-    } else {
-      log('debug', 'Tier 2 (PTY): could not resolve PTY path, skipping');
-    }
-  } catch (err) {
-    lastError = err.message;
-    log('warning', `Tier 2 (PTY) failed: ${err.message}`);
-  }
+  // Deliver to each discovered process
+  for (const proc of processes) {
+    const entry = { pid: proc.pid, method: proc.method, success: false, error: null };
 
-  // Tier 3: xdotool (existing implementation)
-  if (xdotoolFallback) {
     try {
-      log('debug', 'Tier 3 (xdotool): falling back to xdotool...');
-      tiersAttempted.push(TIER.XDOTOOL);
+      if (proc.method === 'tmux') {
+        const sequence = buildResumeSequence({ menuSelection, resumePrompt: resumeText });
+        await sendKeystrokeSequence(proc.target, sequence);
+        entry.success = true;
+        log('success', `Delivered to PID ${proc.pid} via tmux pane ${proc.target}`);
+      } else if (proc.method === 'pty') {
+        if (!tiersAttempted.includes(TIER.PTY)) tiersAttempted.push(TIER.PTY);
+        await sendViaPty(proc.ptyPath, resumeText, { menuSelection });
+        entry.success = true;
+        log('success', `Delivered to PID ${proc.pid} via PTY ${proc.ptyPath}`);
+      }
+      if (entry.success) anySuccess = true;
+    } catch (err) {
+      entry.error = err.message;
+      lastError = err.message;
+      log('warning', `Failed to deliver to PID ${proc.pid}: ${err.message}`);
+    }
+
+    targets.push(entry);
+  }
+
+  // Fallback to xdotool if nothing was found or delivered
+  if (!anySuccess && xdotoolFallback) {
+    tiersAttempted.push(TIER.XDOTOOL);
+    try {
+      log('debug', 'No processes reached, falling back to xdotool...');
       await xdotoolFallback();
-      log('success', 'Tier 3 (xdotool): keystrokes sent');
-      return { success: true, tier: TIER.XDOTOOL, error: null, tiersAttempted };
+      log('success', 'xdotool fallback succeeded');
+      anySuccess = true;
     } catch (err) {
       lastError = err.message;
-      log('warning', `Tier 3 (xdotool) failed: ${err.message}`);
+      log('warning', `xdotool fallback failed: ${err.message}`);
     }
-  } else {
-    tiersAttempted.push(TIER.XDOTOOL);
-    log('debug', 'Tier 3 (xdotool): no fallback function provided, skipping');
   }
 
   return {
-    success: false,
-    tier: null,
-    error: lastError || 'All delivery tiers failed',
+    success: anySuccess,
     tiersAttempted,
+    targets,
+    error: anySuccess ? null : (lastError || 'No claude processes found and no fallback available'),
   };
 }
 
