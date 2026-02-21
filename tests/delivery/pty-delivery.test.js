@@ -78,5 +78,41 @@ describe('pty-delivery', () => {
       expect(bufferWrites.length).toBeGreaterThanOrEqual(1);
       expect(bufferWrites[0][0]).toBe(0x1B); // ESC
     });
+
+    test('sends menu selection "1" before text fallback', async () => {
+      const written = [];
+      const origOpen = fs.openSync;
+      const origWrite = fs.writeSync;
+      const origClose = fs.closeSync;
+      fs.openSync = () => 99;
+      fs.writeSync = (_fd, data) => { written.push(data); };
+      fs.closeSync = () => {};
+      try {
+        await sendViaPty('/dev/pts/test', 'continue');
+      } finally {
+        fs.openSync = origOpen;
+        fs.writeSync = origWrite;
+        fs.closeSync = origClose;
+      }
+      expect(written.some(w => w === '1')).toBe(true);
+    });
+
+    test('accepts menuSelection option', async () => {
+      const written = [];
+      const origOpen = fs.openSync;
+      const origWrite = fs.writeSync;
+      const origClose = fs.closeSync;
+      fs.openSync = () => 99;
+      fs.writeSync = (_fd, data) => { written.push(data); };
+      fs.closeSync = () => {};
+      try {
+        await sendViaPty('/dev/pts/test', 'continue', { menuSelection: '2' });
+      } finally {
+        fs.openSync = origOpen;
+        fs.writeSync = origWrite;
+        fs.closeSync = origClose;
+      }
+      expect(written.some(w => w === '2')).toBe(true);
+    });
   });
 });

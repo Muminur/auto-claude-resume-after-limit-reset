@@ -15,20 +15,24 @@ async function resolvePty(pid) {
   }
 }
 
-async function sendViaPty(ptyPath, text) {
+async function sendViaPty(ptyPath, text, opts = {}) {
   return new Promise((resolve, reject) => {
     try {
+      const menuSelection = opts.menuSelection || '1';
       const fd = fs.openSync(ptyPath, 'w');
 
-      // Send Escape (0x1B) to dismiss any menu
-      fs.writeSync(fd, Buffer.from([0x1B]));
+      // Phase 1: Dismiss any open dialog
+      fs.writeSync(fd, Buffer.from([0x1B])); // Escape
+      fs.writeSync(fd, Buffer.from([0x1B])); // Escape again
 
-      // Send Ctrl+U (0x15) to clear line
-      fs.writeSync(fd, Buffer.from([0x15]));
+      // Phase 2: Try menu option selection
+      fs.writeSync(fd, menuSelection);
 
-      // Send the text followed by Enter (0x0D carriage return, NOT 0x0A linefeed)
-      // Claude Code TUI requires \r to submit; \n only adds a newline without submitting
-      fs.writeSync(fd, text + '\r');
+      // Phase 3: Fallback — dismiss, clear line, type text
+      fs.writeSync(fd, Buffer.from([0x1B])); // Escape
+      fs.writeSync(fd, Buffer.from([0x1B])); // Escape again
+      fs.writeSync(fd, Buffer.from([0x15])); // Ctrl+U (clear line)
+      fs.writeSync(fd, text + '\r');          // text + CR (NOT LF)
 
       fs.closeSync(fd);
       resolve();
