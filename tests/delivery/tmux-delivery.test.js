@@ -1,4 +1,4 @@
-const { detectTmuxSession, sendViaTmux } = require('../../src/delivery/tmux-delivery');
+const { detectTmuxSession, sendViaTmux, discoverAllClaudeProcesses } = require('../../src/delivery/tmux-delivery');
 
 describe('tmux-delivery', () => {
   describe('detectTmuxSession', () => {
@@ -26,5 +26,27 @@ describe('tmux-delivery', () => {
       await expect(sendViaTmux('nonexistent-session-12345', 'continue'))
         .rejects.toThrow();
     });
+  });
+});
+
+describe('discoverAllClaudeProcesses', () => {
+  test('returns an array', async () => {
+    const results = await discoverAllClaudeProcesses();
+    expect(Array.isArray(results)).toBe(true);
+  });
+
+  test('each entry has pid, method, and either target or ptyPath', async () => {
+    const results = await discoverAllClaudeProcesses();
+    for (const entry of results) {
+      expect(typeof entry.pid).toBe('number');
+      expect(['tmux', 'pty']).toContain(entry.method);
+      if (entry.method === 'tmux') {
+        expect(typeof entry.target).toBe('string');
+        expect(entry.target).toMatch(/^.+:\d+\.\d+$/);
+      } else {
+        expect(typeof entry.ptyPath).toBe('string');
+        expect(entry.ptyPath).toMatch(/^\/dev\/pts\//);
+      }
+    }
   });
 });

@@ -1,4 +1,5 @@
 const { execFile } = require('child_process');
+const { resolvePty } = require('./pty-delivery');
 
 async function detectTmuxSession(pid) {
   return new Promise((resolve) => {
@@ -7,7 +8,7 @@ async function detectTmuxSession(pid) {
         return resolve(null);
       }
 
-      execFile('tmux', ['list-panes', '-a', '-F', '#{pane_pid} #{session_name}'], (err, stdout) => {
+      execFile('tmux', ['list-panes', '-a', '-F', '#{pane_pid} #{session_name}:#{window_index}.#{pane_index}'], (err, stdout) => {
         if (err || !stdout.trim()) {
           return resolve(null);
         }
@@ -257,4 +258,48 @@ async function findClaudeTargetPanes(claudePid) {
   return findAllClaudePanes();
 }
 
-module.exports = { detectTmuxSession, sendViaTmux, walkProcessTree, getParentPid, findAllClaudePanes, findClaudeTargetPanes, sendToAllPanes, buildResumeSequence, sendKeystrokeSequence };
+async function discoverAllClaudeProcesses() {
+  const pids = await new Promise((resolve) => {
+    execFile('pgrep', ['-x', 'claude'], (err, stdout) => {
+      if (err || !stdout.trim()) return resolve([]);
+      resolve(
+        stdout.trim().split('\n')
+          .map(s => parseInt(s.trim(), 10))
+          .filter(n => !isNaN(n))
+      );
+    });
+  });
+
+  if (pids.length === 0) return [];
+
+  const paneMap = await new Promise((resolve) => {
+    execFile('tmux', [
+      'list-panes', '-a', '-F',
+      '#{pane_pid} #{session_name}:#{window_index}.#{pane_index}'
+    ], (err, stdout) => {
+      if (err || !stdout || !stdout.trim()) return resolve(new Map());
+      const map = new Map();
+      for (const line of stdout.trim().split('\n')) {
+        const [panePid, target] = line.trim().split(' ', 2);
+        if (panePid && target) map.set(parseInt(panePid, 10), target);
+      }
+      resolve(map);
+    });
+  });
+
+  const results = [];
+  for (const pid of pids) {
+    const tmuxTarget = await walkProcessTree(pid, paneMap);
+    if (tmuxTarget) {
+      results.push({ pid, method: 'tmux', target: tmuxTarget });
+      continue;
+    }
+    const ptyPath = await resolvePty(pid);
+    if (ptyPath) {
+      results.push({ pid, method: 'pty', ptyPath });
+    }
+  }
+  return results;
+}
+
+module.exports = { detectTmuxSession, sendViaTmux, walkProcessTree, getParentPid, findAllClaudePanes, findClaudeTargetPanes, sendToAllPanes, buildResumeSequence, sendKeystrokeSequence, discoverAllClaudeProcesses };
