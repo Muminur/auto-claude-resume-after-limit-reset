@@ -295,7 +295,7 @@ async function discoverAllClaudeProcesses() {
       continue;
     }
     const ptyPath = await resolvePty(pid);
-    if (ptyPath) {
+    if (ptyPath && ptyPath.startsWith('/dev/pts/')) {
       results.push({ pid, method: 'pty', ptyPath });
     }
   }
