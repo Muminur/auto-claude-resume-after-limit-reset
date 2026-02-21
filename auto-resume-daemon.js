@@ -684,29 +684,13 @@ Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
       });
     } else {
       // Linux: Use tiered delivery (tmux > PTY > xdotool)
-      // Read Claude PID from status file (supports both old format and queue format)
-      let claudePid = null;
-      try {
-        if (fs.existsSync(STATUS_FILE)) {
-          const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
-          claudePid = statusData.claude_pid;
-          if (!claudePid && statusData.queue) {
-            const active = statusData.queue.find(e => e.claude_pid);
-            if (active) claudePid = active.claude_pid;
-          }
-        }
-      } catch (e) {
-        log('debug', 'Could not read claude_pid from status file');
-      }
-
       const resumeText = getConfigValue('resumePrompt', 'continue');
       const menuSelection = getConfigValue('menuSelection', '1');
       deliverResume({
-        claudePid,
         resumeText,
         menuSelection,
         log,
-        xdotoolFallback: () => sendContinueViaXdotool(claudePid),
+        xdotoolFallback: () => sendContinueViaXdotool(null),
       }).then((result) => {
         if (result.success) {
           log('success', `Delivery succeeded via ${result.tier} (tried: ${result.tiersAttempted.join(', ')})`);
