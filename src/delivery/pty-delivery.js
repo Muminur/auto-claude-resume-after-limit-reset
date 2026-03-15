@@ -1,6 +1,12 @@
 const fs = require('fs');
+const { execFile } = require('child_process');
+const os = require('os');
 
 async function resolvePty(pid) {
+  if (os.platform() === 'darwin') {
+    return resolvePtyMacOS(pid);
+  }
+  // Linux: read /proc/PID/fd/0
   try {
     const fdPath = `/proc/${pid}/fd/0`;
     const target = fs.readlinkSync(fdPath);
@@ -13,6 +19,24 @@ async function resolvePty(pid) {
   } catch (err) {
     return null;
   }
+}
+
+async function resolvePtyMacOS(pid) {
+  return new Promise((resolve) => {
+    execFile('ps', ['-o', 'tty=', '-p', String(pid)], (err, stdout) => {
+      if (err || !stdout.trim() || stdout.trim() === '??') {
+        return resolve(null);
+      }
+      const tty = stdout.trim(); // e.g. "ttys001"
+      const ptyPath = `/dev/${tty}`;
+      try {
+        fs.accessSync(ptyPath, fs.constants.W_OK);
+        resolve(ptyPath);
+      } catch (_) {
+        resolve(null);
+      }
+    });
+  });
 }
 
 async function sendViaPty(ptyPath, text, opts = {}) {

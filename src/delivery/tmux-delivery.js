@@ -141,7 +141,7 @@ async function findAllClaudePanes() {
  */
 function hasClaudeChild(pid) {
   return new Promise((resolve) => {
-    execFile('pgrep', ['-P', String(pid), '-a'], (err, stdout) => {
+    execFile('pgrep', ['-P', String(pid), '-l'], (err, stdout) => {
       if (err || !stdout) return resolve(false);
       resolve(/claude/i.test(stdout));
     });
@@ -260,11 +260,12 @@ async function findClaudeTargetPanes(claudePid) {
 
 async function discoverAllClaudeProcesses() {
   const pids = await new Promise((resolve) => {
-    execFile('ps', ['-eo', 'pid,comm', '--no-headers'], (err, stdout) => {
+    execFile('ps', ['-eo', 'pid,comm'], (err, stdout) => {
       if (err || !stdout.trim()) return resolve([]);
       const claudePatterns = /^(claude|node|2\.\d+\.\d+)$/i;
       const candidates = [];
-      for (const line of stdout.trim().split('\n')) {
+      const lines = stdout.trim().split('\n');
+      for (const line of lines.slice(1)) { // skip header
         const parts = line.trim().split(/\s+/);
         if (parts.length < 2) continue;
         const pid = parseInt(parts[0], 10);

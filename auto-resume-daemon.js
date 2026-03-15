@@ -648,39 +648,61 @@ Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
         }
       });
     } else if (platform === 'darwin') {
-      // macOS: Use osascript to find and send to Terminal/iTerm windows
-      const script = `
-        tell application "System Events"
-          set terminalApps to {"Terminal", "iTerm", "iTerm2"}
-
-          repeat with appName in terminalApps
-            if (exists process appName) then
-              tell process appName
-                set frontmost to true
-                -- Step 1: Press Escape to dismiss any open menu
-                key code 53
-                delay 0.5
-                -- Step 2: Press Ctrl+U to clear input line
-                keystroke "u" using control down
-                delay 0.3
-                -- Step 3: Type 'continue' + Return to resume
-                keystroke "continue"
-                keystroke return
-                delay 0.5
-              end tell
-            end if
-          end repeat
-        end tell
-      `;
-
-      exec(`osascript -e '${script}'`, (error, stdout) => {
-        if (error) {
-          log('error', `Failed to send keystrokes: ${error.message}`);
-          reject(error);
-        } else {
-          log('success', `Sent: Escape, Ctrl+U, then continue + Enter to terminal windows`);
-          resolve();
+      // macOS: Find Claude Code processes and write directly to their TTY devices
+      // This avoids needing Accessibility permissions (osascript + System Events)
+      exec('ps -eo pid,tty,comm', (err, stdout) => {
+        if (err) {
+          log('error', `Failed to list processes: ${err.message}`);
+          reject(err);
+          return;
         }
+        const lines = stdout.trim().split('\n').slice(1); // skip header
+        const claudeProcs = [];
+        for (const line of lines) {
+          const parts = line.trim().split(/\s+/);
+          if (parts.length < 3) continue;
+          const tty = parts[1];
+          const comm = parts.slice(2).join(' ');
+          if (/claude/i.test(comm) && tty !== '??' && tty !== '?') {
+            claudeProcs.push({ tty: '/dev/' + tty, comm });
+          }
+        }
+
+        if (claudeProcs.length === 0) {
+          log('warning', 'No Claude Code terminal sessions found');
+          resolve();
+          return;
+        }
+
+        const menuSelection = getConfigValue('menuSelection', '1');
+        let sent = 0;
+        for (const proc of claudeProcs) {
+          try {
+            const fd = fs.openSync(proc.tty, 'w');
+            // Escape to dismiss dialogs
+            fs.writeSync(fd, Buffer.from([0x1B]));
+            fs.writeSync(fd, Buffer.from([0x1B]));
+            // Menu option selection (resume)
+            fs.writeSync(fd, menuSelection);
+            // Fallback: Escape + Ctrl+U + type 'continue' + Enter
+            fs.writeSync(fd, Buffer.from([0x1B]));
+            fs.writeSync(fd, Buffer.from([0x1B]));
+            fs.writeSync(fd, Buffer.from([0x15])); // Ctrl+U clear line
+            fs.writeSync(fd, 'continue\r');
+            fs.closeSync(fd);
+            sent++;
+            log('success', `Sent resume to ${proc.tty} (${proc.comm})`);
+          } catch (writeErr) {
+            log('warning', `Failed to write to ${proc.tty}: ${writeErr.message}`);
+          }
+        }
+
+        if (sent > 0) {
+          log('success', `Delivered resume to ${sent} Claude session(s)`);
+        } else {
+          log('warning', 'Failed to deliver to any Claude sessions');
+        }
+        resolve();
       });
     } else {
       // Linux: Use tiered delivery (tmux > PTY > xdotool)
