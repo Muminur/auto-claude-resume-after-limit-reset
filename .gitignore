@@ -1,6 +1,9 @@
 node_modules/
 daemon.log
+daemon-error.log
 daemon.pid
 heartbeat.json
+hook-debug.log
 status.json
-.last-start
+*.lock
+*.tmp
