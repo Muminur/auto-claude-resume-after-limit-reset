@@ -93,6 +93,7 @@ let currentResetTime = null;
 let lastStatusMtime = null;
 let isBackgroundMode = false;  // Track if running detached (no stdout)
 let dashboard = null;  // Dashboard integration instance
+let processWatcher = null;  // Process watcher for transcript file monitoring
 let currentQueueEntryId = null;
 let _isResumeInProgress = false;
 
@@ -1465,6 +1466,15 @@ function startDaemon() {
   isRunning = true;
   watchStatusFile();
 
+  // Start process watcher as fallback detection
+  try {
+    const { ProcessWatcher } = require('./src/watcher/process-watcher');
+    processWatcher = new ProcessWatcher({ logFn: log, debounceMs: 2000 });
+    processWatcher.start();
+  } catch (err) {
+    log('warning', `Process watcher not available: ${err.message}`);
+  }
+
   // Keep event loop alive when running as a service (no TTY / stdin closed).
   // Create a server on a random port as a guaranteed event loop anchor.
   // This is more reliable than setInterval alone in Node 25+.
@@ -1575,6 +1585,12 @@ function setupSignalHandlers() {
     if (transcriptPollInterval) {
       clearInterval(transcriptPollInterval);
       transcriptPollInterval = null;
+    }
+
+    // Stop process watcher
+    if (processWatcher) {
+      processWatcher.stop();
+      processWatcher = null;
     }
 
     // Stop dashboard servers
