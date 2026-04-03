@@ -198,7 +198,7 @@ node auto-resume-daemon.js monitor     # Run in foreground (for systemd)
 |----------|-----------------|------------|
 | Linux | Tiered: tmux > PTY > xdotool (auto-detected) | systemd service + SessionStart hook |
 | macOS | osascript (AppleScript) | SessionStart hook |
-| Windows | PowerShell SendKeys | SessionStart hook |
+| Windows | WezTerm CLI (pane injection) → PowerShell process-tree targeting | SessionStart hook |
 
 ## Testing
 

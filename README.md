@@ -14,9 +14,13 @@ Writes reset time to ~/.claude/auto-resume/status.json
 Background daemon counts down to reset time
         ↓
 After reset + 10s safety delay:
-  → Tier 1: tmux send-keys (works when screen is locked)
-  → Tier 2: PTY write to /dev/pts/N (works when screen is locked)
-  → Tier 3: xdotool (Linux) / osascript (macOS) / SendKeys (Windows)
+  Linux/macOS:
+    → Tier 1: tmux send-keys (works when screen is locked)
+    → Tier 2: PTY write to /dev/pts/N (works when screen is locked)
+    → Tier 3: xdotool (Linux) / PTY+osascript (macOS)
+  Windows:
+    → Tier 1: WezTerm CLI — injects bytes directly into Claude pane (no focus needed)
+    → Tier 2: PowerShell — walks process tree to find & activate the correct terminal window
   → Verifies via transcript activity
         ↓
 Claude Code resumes automatically
@@ -34,7 +38,7 @@ Claude Code resumes automatically
 - **Tab Cycling** — Handles multiple Claude Code sessions in gnome-terminal tabs
 - **Background Daemon** — Runs as systemd service (Linux) or background process
 - **Crash-Loop Protection** — `StartLimitBurst=3`, `RestartSec=60`, 30s self-protection
-- **Cross-Platform** — Linux (tmux/PTY/xdotool), macOS (tmux/osascript), Windows (SendKeys)
+- **Cross-Platform** — Linux (tmux/PTY/xdotool), macOS (tmux/PTY/osascript), Windows (WezTerm CLI / PowerShell window targeting)
 - **Zero Configuration** — Just install and forget
 - **Self-Watchdog** — Memory monitoring (exits at 200MB), log rotation (1MB max)
 - **Retry with Backoff** — 4 retries with exponential backoff if resume fails
@@ -48,15 +52,17 @@ The daemon attempts delivery using the most reliable method first, falling back 
 |------|--------|--------------|----------|
 | 1 | tmux send-keys | Yes | Linux/macOS |
 | 2 | PTY write | Yes | Linux |
-| 3 | xdotool/osascript/SendKeys | No | All |
+| 2 | WezTerm CLI | Yes (no focus needed) | Windows |
+| 3 | xdotool/osascript | No | Linux/macOS |
+| 3 | PowerShell window targeting | No | Windows |
 
 ### Cross-Platform Support
 
 | Platform | Tier 1 | Tier 2 | Tier 3 |
 |----------|--------|--------|--------|
 | Linux | tmux send-keys | PTY write (`/dev/pts/N`) | xdotool |
-| macOS | tmux send-keys | — | osascript |
-| Windows | — | — | SendKeys (PowerShell) |
+| macOS | tmux send-keys | PTY write | osascript |
+| Windows | WezTerm CLI (pane injection) | PowerShell process-tree targeting | title-based window search |
 
 ## Quick Install (Linux)
 
@@ -195,13 +201,22 @@ For gnome-terminal with multiple tabs, the daemon:
 
 This ensures ALL Claude Code sessions receive the "continue" command, not just the active tab.
 
-### Window Finding Strategies
+### Window Finding Strategies (Linux/macOS)
 
 The daemon tries 3 strategies in order:
 
 1. **Saved PID** — Walks the process tree from the Claude PID saved in `status.json` to find the terminal window
 2. **Live PID** — Discovers running `claude` processes via `pgrep` and walks their process trees
 3. **All Terminals** — Falls back to finding all terminal windows by WM_CLASS
+
+### Window Finding Strategies (Windows)
+
+On Windows, the daemon uses a dedicated delivery module (`src/delivery/windows-delivery.js`):
+
+1. **WezTerm CLI** — Calls `wezterm cli send-text` to inject keystrokes directly into the Claude pane. Finds the pane by title/cwd pattern. No window focus required — works even when another app is active.
+2. **Process-tree targeting** — Walks from `node.exe`/`claude.exe` up the process tree to find the parent terminal (Windows Terminal, WezTerm, PowerShell). Uses `AppActivate(PID)` to bring that specific window to focus before sending keys — avoids sending to the wrong PowerShell window.
+3. **Title-based search** — Tries common terminal window titles (`WezTerm`, `Claude`, `Windows PowerShell`, `Terminal`).
+4. **Foreground fallback** — Sends to whatever window is currently focused.
 
 ## Configuration
 
@@ -305,6 +320,20 @@ StartLimitBurst=3
 StartLimitIntervalSec=300
 RestartSec=60
 ```
+
+### Windows: keystrokes go to wrong window / "continue" not typed
+
+**Cause (pre-fix):** The Windows delivery used `SendKeys` without targeting a specific window — keystrokes went to whatever had focus when the daemon fired.
+
+**Fix (v1.5.0+):** The daemon now uses a two-tier approach:
+1. **WezTerm CLI** — if you use WezTerm, keystrokes are injected directly into the Claude pane (no focus needed). Install WezTerm from https://wezfurlong.org/wezterm/
+2. **Process-tree targeting** — walks from the `node.exe`/`claude.exe` process up to the parent terminal and activates it by PID before sending keys.
+
+**If it still fails:**
+- Ensure `node auto-resume-daemon.js status` shows the daemon is running
+- Run `node auto-resume-daemon.js --test 5` to trigger a test delivery and watch which window receives the keystrokes
+- For WezTerm: verify `wezterm cli list` works in your terminal (WezTerm GUI must be running)
+- For plain PowerShell: ensure the PowerShell window hosting Claude Code is visible (not minimized) — `AppActivate` cannot restore minimized windows
 
 ### Rate limit not detected (hook runs but doesn't trigger daemon)
 

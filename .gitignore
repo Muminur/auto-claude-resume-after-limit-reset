@@ -7,3 +7,9 @@ hook-debug.log
 status.json
 *.lock
 *.tmp
+.omc/
+.serena/
+CLAUDE.md
+planning.md
+tasks.md
+*.docx

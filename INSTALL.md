@@ -498,4 +498,4 @@ nano ~/.claude/settings.json
 |----------|--------------|------------------|
 | **Linux** | Node.js 16+, xdotool | xdotool (X11) |
 | **macOS** | Node.js 16+, Accessibility permission | osascript (AppleScript) |
-| **Windows** | Node.js 16+, PowerShell 5.1+ | SendKeys (PowerShell) |
+| **Windows** | Node.js 16+, PowerShell 5.1+ | WezTerm CLI (preferred) / PowerShell process-tree targeting |

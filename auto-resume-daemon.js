@@ -614,39 +614,22 @@ async function sendContinueToTerminals() {
 
   return new Promise((resolve, reject) => {
     if (platform === 'win32') {
-      // Windows: Write script to temp file to avoid escaping issues
-      const tempScript = path.join(os.tmpdir(), 'claude-auto-resume-send.ps1');
-      const scriptContent = `
-Add-Type -AssemblyName System.Windows.Forms
-
-# Step 1: Press Escape to dismiss any open interactive menu
-[System.Windows.Forms.SendKeys]::SendWait('{ESC}')
-Start-Sleep -Milliseconds 500
-
-# Step 2: Press Ctrl+U to clear any stale input
-[System.Windows.Forms.SendKeys]::SendWait('^u')
-Start-Sleep -Milliseconds 300
-
-# Step 3: Type 'continue' + Enter to resume the conversation
-[System.Windows.Forms.SendKeys]::SendWait('continue{ENTER}')
-Write-Output "Sent Escape, Ctrl+U, then continue + Enter"
-`;
-
-      // Write script to temp file
-      fs.writeFileSync(tempScript, scriptContent, 'utf8');
-
-      // Execute the script file
-      exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempScript}"`, (error, stdout) => {
-        // Clean up temp file
-        try { fs.unlinkSync(tempScript); } catch (e) { /* ignore */ }
-
-        if (error) {
-          log('error', `Failed to send keystrokes: ${error.message}`);
-          reject(error);
-        } else {
-          log('success', `Keystrokes sent: ${stdout.trim()}`);
+      // Windows: Use tiered delivery (WezTerm CLI → PowerShell window targeting)
+      const resumeText = getConfigValue('resumePrompt', 'continue');
+      deliverResume({
+        resumeText,
+        log,
+      }).then((result) => {
+        if (result.success) {
+          log('success', `Windows delivery succeeded via ${result.tiersAttempted.join(', ')}`);
           resolve();
+        } else {
+          log('error', `Windows delivery failed: ${result.error}`);
+          reject(new Error(result.error || 'Windows delivery failed'));
         }
+      }).catch((err) => {
+        log('error', `Windows delivery error: ${err.message}`);
+        reject(err);
       });
     } else if (platform === 'darwin') {
       // macOS: Find Claude Code processes and write directly to their TTY devices

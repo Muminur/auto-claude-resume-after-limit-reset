@@ -1,7 +1,10 @@
+const os = require('os');
 const { discoverAllClaudeProcesses, sendKeystrokeSequence, buildResumeSequence } = require('./tmux-delivery');
 const { sendViaPty } = require('./pty-delivery');
+const { deliverResumeWindows } = require('./windows-delivery');
 
 const TIER = {
+  WINDOWS: 'windows',
   TMUX: 'tmux',
   PTY: 'pty',
   XDOTOOL: 'xdotool',
@@ -28,6 +31,18 @@ async function deliverResume(opts = {}) {
     xdotoolFallback = null,
     _discoverer = discoverAllClaudeProcesses,
   } = opts;
+
+  // Windows: use dedicated Windows delivery (WezTerm CLI → PowerShell window targeting)
+  if (os.platform() === 'win32') {
+    const tiersAttempted = [TIER.WINDOWS];
+    const result = await deliverResumeWindows({ resumeText, log });
+    return {
+      success: result.success,
+      tiersAttempted,
+      targets: [],
+      error: result.error,
+    };
+  }
 
   const tiersAttempted = [TIER.TMUX]; // discovery always attempts tmux classification
   const targets = [];
