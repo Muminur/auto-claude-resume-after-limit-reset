@@ -28,6 +28,13 @@ const http = require('http');
 const { URL } = require('url');
 const { EventEmitter } = require('events');
 
+let statusLineProvider = null;
+try {
+  statusLineProvider = require('./statusline-provider');
+} catch (e) {
+  // Module not available
+}
+
 /**
  * ApiServer class
  * Manages HTTP REST API server for monitoring and control
@@ -293,6 +300,11 @@ class ApiServer extends EventEmitter {
       return this._handleAnalytics(req, res);
     }
 
+    // Status line
+    if (method === 'GET' && pathname === '/status-line') {
+      return this._handleStatusLine(req, res);
+    }
+
     return false;
   }
 
@@ -445,6 +457,26 @@ class ApiServer extends EventEmitter {
     } catch (error) {
       this._log('error', `Error getting analytics: ${error.message}`);
       this._sendError(res, 500, 'Failed to retrieve analytics');
+      return true;
+    }
+  }
+
+  /**
+   * Handle status line endpoint
+   * @private
+   */
+  _handleStatusLine(req, res) {
+    try {
+      if (statusLineProvider) {
+        const line = statusLineProvider.getStatusLine();
+        this._sendJson(res, 200, { statusLine: line, timestamp: new Date().toISOString() });
+      } else {
+        this._sendError(res, 501, 'Status line provider not available');
+      }
+      return true;
+    } catch (error) {
+      this._log('error', `Error getting status line: ${error.message}`);
+      this._sendError(res, 500, 'Failed to get status line');
       return true;
     }
   }
