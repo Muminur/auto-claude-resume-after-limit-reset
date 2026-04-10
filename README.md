@@ -43,6 +43,17 @@ Claude Code resumes automatically
 - **Self-Watchdog** — Memory monitoring (exits at 200MB), log rotation (1MB max)
 - **Retry with Backoff** — 4 retries with exponential backoff if resume fails
 - **Transcript Polling** — Redundant fallback detection from JSONL transcripts
+- **Event-Driven Watching** — Uses `fs.watch()` for instant status file detection, falls back to polling on network drives
+- **Context-Aware Resume** — Extracts last user task from transcript and generates contextual resume prompt
+- **Resume Verification** — Verifies transcript activity after resume, retries 3x with 10s/20s/40s backoff
+- **Stale PID Validation** — Validates daemon PID with `process.kill(pid, 0)`, Windows `tasklist` fallback
+- **Windows Terminal Pipe** — Detects `WT_SESSION` and delivers via named pipe before PowerShell fallback
+- **Proactive Usage Warning** — Warns at 80% of historical rate limit threshold via PostToolUse hook
+- **Hot-Reload Config** — Watches `config.json` for changes and reloads in-memory without restart
+- **Pattern Versioning** — Configurable rate limit detection patterns with version tracking
+- **HMAC Integrity** — Signs `status.json` with HMAC-SHA256 to prevent tampering
+- **Simulate Command** — `/auto-resume:simulate` creates test rate limit with 30s countdown
+- **Status Line** — `GET /status-line` endpoint returns daemon health as single-line string
 
 ## Architecture: Tiered Delivery
 
@@ -243,6 +254,12 @@ Edit `~/.claude/auto-resume/config.json`:
   "daemon": {
     "transcriptPolling": true,
     "maxLogSizeMB": 1
+  },
+  "detection": {
+    "patternVersion": "1.0.0",
+    "patterns": [
+      "You['\\u2019]ve hit your (?:usage )?limit.*?resets\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)\\s*\\([^)]+\\)"
+    ]
   }
 }
 ```
@@ -259,15 +276,22 @@ Tests cover: daemon script integrity, systemd service configuration, runtime beh
 
 ### Simulate a Rate Limit
 
+Use the `/auto-resume:simulate` command or run the script directly:
+
 ```bash
-# Write a fake rate limit (resets in 15 seconds)
+# Simulate via script (creates status.json with 30s countdown)
+node scripts/simulate.js
+
+# Or manually write a fake rate limit (resets in 15 seconds)
 RESET_TIME=$(date -u -d "+15 seconds" +"%Y-%m-%dT%H:%M:%S.000Z")
 cat > ~/.claude/auto-resume/status.json <<EOF
 {
   "detected": true,
   "reset_time": "$RESET_TIME",
   "message": "Test rate limit",
-  "timezone": "Asia/Dhaka"
+  "timezone": "Asia/Dhaka",
+  "last_task_context": "Test task context",
+  "resume_prompt": "Continue with: Test task context"
 }
 EOF
 

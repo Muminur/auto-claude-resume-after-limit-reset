@@ -46,8 +46,14 @@ The daemon watches `~/.claude/auto-resume/status.json` for changes. When a rate 
 - Logs the detection event
 
 Detection happens via two methods:
-1. **File watching** — Polls `status.json` for changes (primary)
+1. **File watching** — Uses `fs.watch()` for instant change detection on `status.json` (primary). Falls back to polling when `fs.watch` is unavailable (e.g., network drives). The `checkInterval` config controls the fallback poll interval.
 2. **Transcript polling** — Scans JSONL transcripts for rate limit messages (fallback)
+
+The status file now includes additional fields for context-aware resume:
+- `last_task_context` — Last user task extracted from transcript
+- `resume_prompt` — Generated resume prompt (e.g., "Continue with: Fix login bug")
+- `transcript_path` — Path to the transcript for post-resume verification
+- `_hmac` — HMAC-SHA256 integrity signature (verified by daemon before processing)
 
 ### 3. Automatic Resume
 When the reset time arrives (+ 10s safety delay), the daemon uses a **tiered delivery** strategy, trying each tier in order until one succeeds:
