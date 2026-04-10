@@ -11,5 +11,10 @@ status.json
 .serena/
 CLAUDE.md
 planning.md
+PLAN.md
 tasks.md
+PRD.md
+prd.docx
 *.docx
+.env
+*.secret
