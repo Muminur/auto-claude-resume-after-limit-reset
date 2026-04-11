@@ -662,15 +662,13 @@ async function sendContinueToTerminals() {
         let sent = 0;
         for (const proc of claudeProcs) {
           try {
-            const fd = fs.openSync(proc.tty, 'w');
-            // Escape to dismiss dialogs
+            // O_NOCTTY: prevent TTY from becoming daemon's controlling terminal
+            const fd = fs.openSync(proc.tty, fs.constants.O_WRONLY | fs.constants.O_NOCTTY);
+            // Escape to dismiss any active modal/dialog
             fs.writeSync(fd, Buffer.from([0x1B]));
-            fs.writeSync(fd, Buffer.from([0x1B]));
-            // Menu option selection (resume)
+            // Menu option selection (resume) if Claude Code shows a numbered menu
             fs.writeSync(fd, menuSelection);
-            // Fallback: Escape + Ctrl+U + type 'continue' + Enter
-            fs.writeSync(fd, Buffer.from([0x1B]));
-            fs.writeSync(fd, Buffer.from([0x1B]));
+            // Clear line then type 'continue' + Enter (primary resume command)
             fs.writeSync(fd, Buffer.from([0x15])); // Ctrl+U clear line
             fs.writeSync(fd, 'continue\r');
             fs.closeSync(fd);

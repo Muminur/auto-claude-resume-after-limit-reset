@@ -277,3 +277,11 @@ async function main() {
 }
 
 main();
+
+// Export for use by daemon's transcript polling
+module.exports = {
+  analyzeTranscript: analyzeTranscriptTail,  // compatibility alias
+  analyzeTranscriptTail,
+  parseResetTime,
+  isRealRateLimit,
+};

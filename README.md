@@ -54,6 +54,8 @@ Claude Code resumes automatically
 - **HMAC Integrity** — Signs `status.json` with HMAC-SHA256 to prevent tampering
 - **Simulate Command** — `/auto-resume:simulate` creates test rate limit with 30s countdown
 - **Status Line** — `GET /status-line` endpoint returns daemon health as single-line string
+- **O_NOCTTY PTY Write** — PTY writes use `O_NOCTTY` flag so the TTY never becomes the daemon's controlling terminal, preventing signal bleed
+- **Hook Module Exports** — `rate-limit-hook.js` exports `analyzeTranscriptTail`, `parseResetTime`, and `isRealRateLimit` so the daemon can import them directly without spawning a subprocess
 
 ## Architecture: Tiered Delivery
 
