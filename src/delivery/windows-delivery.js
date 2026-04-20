@@ -252,22 +252,32 @@ ${keystrokeBlock}
  * @returns {Promise<string|null>}
  */
 async function findWtExe() {
-  const candidates = [
+  // Check well-known install paths. Note: the AppData\Local\Microsoft\WindowsApps
+  // path is a Windows App Execution Alias — a virtual shortcut that fs.existsSync
+  // returns false for even when wt.exe is installed. So we skip existsSync there
+  // and just run wt.exe directly; errors at launch time mean it wasn't installed.
+  const knownPaths = [
     path.join(
       os.homedir(),
       'AppData', 'Local', 'Microsoft', 'WindowsApps', 'wt.exe'
     ),
-    'C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_*\\wt.exe',
   ];
-  for (const c of candidates) {
-    try { if (fs.existsSync(c)) return c; } catch (_) {}
+  for (const c of knownPaths) {
+    // Test by asking wt.exe to print its version; 0-exit = present
+    const ok = await new Promise((resolve) => {
+      execFile(c, ['--version'], { timeout: 3000 }, (err) => resolve(!err));
+    });
+    if (ok) return c;
   }
-  // Fall back to PATH lookup
+  // Fall back to PATH lookup — trust `where` output directly; don't existsSync
+  // since App Execution Aliases won't pass that check
   return new Promise((resolve) => {
-    execFile('where', ['wt'], (err, stdout) => {
+    execFile('where', ['wt'], { timeout: 3000 }, (err, stdout) => {
       if (err || !stdout) return resolve(null);
       const first = stdout.trim().split('\n')[0].trim();
-      resolve(first && fs.existsSync(first) ? first : null);
+      if (!first) return resolve(null);
+      // Quick smoke-test that the binary actually responds
+      execFile(first, ['--version'], { timeout: 3000 }, (e) => resolve(e ? null : first));
     });
   });
 }

@@ -276,7 +276,9 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
 
 // Export for use by daemon's transcript polling
 module.exports = {
