@@ -47,7 +47,7 @@ Claude Code resumes automatically
 - **Context-Aware Resume** — Extracts last user task from transcript and generates contextual resume prompt
 - **Resume Verification** — Verifies transcript activity after resume, retries 3x with 10s/20s/40s backoff
 - **Stale PID Validation** — Validates daemon PID with `process.kill(pid, 0)`, Windows `tasklist` fallback
-- **Windows Terminal Pipe** — Detects `WT_SESSION` and delivers via named pipe before PowerShell fallback
+- **Windows Terminal Multi-Tab** — Uses `wt.exe -w 0 focus-tab --target N` to deliver to every tab in Windows Terminal; probes `wt.exe` via `execFile --version` to correctly detect App Execution Alias install paths
 - **Proactive Usage Warning** — Warns at 80% of historical rate limit threshold via PostToolUse hook
 - **Hot-Reload Config** — Watches `config.json` for changes and reloads in-memory without restart
 - **Pattern Versioning** — Configurable rate limit detection patterns with version tracking
@@ -66,16 +66,17 @@ The daemon attempts delivery using the most reliable method first, falling back 
 | 1 | tmux send-keys | Yes | Linux/macOS |
 | 2 | PTY write | Yes | Linux |
 | 2 | WezTerm CLI | Yes (no focus needed) | Windows |
+| 3 | Windows Terminal multi-tab | No | Windows |
 | 3 | xdotool/osascript | No | Linux/macOS |
-| 3 | PowerShell window targeting | No | Windows |
+| 4 | PowerShell window targeting | No | Windows |
 
 ### Cross-Platform Support
 
-| Platform | Tier 1 | Tier 2 | Tier 3 |
-|----------|--------|--------|--------|
-| Linux | tmux send-keys | PTY write (`/dev/pts/N`) | xdotool |
-| macOS | tmux send-keys | PTY write | osascript |
-| Windows | WezTerm CLI (pane injection) | PowerShell process-tree targeting | title-based window search |
+| Platform | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
+|----------|--------|--------|--------|--------|
+| Linux | tmux send-keys | PTY write (`/dev/pts/N`) | xdotool | — |
+| macOS | tmux send-keys | PTY write | osascript | — |
+| Windows | WezTerm CLI (pane injection) | Windows Terminal multi-tab (`wt.exe`) | PowerShell process-tree targeting | title-based window search |
 
 ## Quick Install (Linux)
 
@@ -224,12 +225,12 @@ The daemon tries 3 strategies in order:
 
 ### Window Finding Strategies (Windows)
 
-On Windows, the daemon uses a dedicated delivery module (`src/delivery/windows-delivery.js`):
+On Windows, the daemon uses a dedicated delivery module (`src/delivery/windows-delivery.js`) with four strategies in priority order:
 
 1. **WezTerm CLI** — Calls `wezterm cli send-text` to inject keystrokes directly into the Claude pane. Finds the pane by title/cwd pattern. No window focus required — works even when another app is active.
-2. **Process-tree targeting** — Walks from `node.exe`/`claude.exe` up the process tree to find the parent terminal (Windows Terminal, WezTerm, PowerShell). Uses `AppActivate(PID)` to bring that specific window to focus before sending keys — avoids sending to the wrong PowerShell window.
-3. **Title-based search** — Tries common terminal window titles (`WezTerm`, `Claude`, `Windows PowerShell`, `Terminal`).
-4. **Foreground fallback** — Sends to whatever window is currently focused.
+2. **Windows Terminal multi-tab** — Uses `wt.exe -w 0 focus-tab --target N` to switch to each tab in the Windows Terminal window, then sends the canonical resume keystroke sequence to each one. Tab count is estimated by counting `claude.exe` process descendants of the `WindowsTerminal.exe` process tree, capped at 20. The `wt.exe` path is probed via `execFile --version` to correctly handle the Windows App Execution Alias install location (`%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe`), which `fs.existsSync()` falsely reports as absent.
+3. **Process-tree targeting** — Walks from `node.exe`/`claude.exe` up the process tree to find the parent terminal (Windows Terminal, WezTerm, PowerShell). Uses `AppActivate(PID)` to bring that specific window to focus before sending keys — avoids sending to the wrong PowerShell window.
+4. **Title-based search** — Tries common terminal window titles (`WezTerm`, `Claude`, `Windows PowerShell`, `Terminal`).
 
 ## Configuration
 
@@ -309,11 +310,17 @@ cd ~/.claude/auto-resume && npx jest
 
 ## Troubleshooting
 
-### Daemon exits immediately under systemd
+### Daemon exits immediately (systemd or background)
 
-**Cause:** A module loaded via `require()` calls `process.exit()` unconditionally.
+**Cause:** A module loaded via `require()` calls `process.exit()` unconditionally. The most common culprit is `rate-limit-hook.js` — when the daemon requires it for transcript polling, the hook reads empty stdin (`/dev/null`) and calls `process.exit(0)`, killing the daemon silently within seconds.
 
-**Fix:** Ensure all hook modules have `if (require.main === module) { main(); }` guard before auto-executing. Check with:
+**Fix:** All hook modules must guard their entry point:
+```js
+if (require.main === module) {
+  main();
+}
+```
+This is already in place for `rate-limit-hook.js` as of v1.10.1. For systemd, check logs with:
 ```bash
 journalctl --user -u claude-auto-resume.service --since "5 min ago" --no-pager
 ```

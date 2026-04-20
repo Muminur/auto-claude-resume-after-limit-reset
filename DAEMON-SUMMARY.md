@@ -138,13 +138,28 @@ Running Node.js under systemd (`Type=simple`, no TTY) has two gotchas:
 
 ### rate-limit-hook.js require.main Guard
 
-The hook file has a `main()` function that reads from stdin and calls `process.exit()`. Without a `if (require.main === module)` guard, `require()`-ing the hook (to import `analyzeTranscript`) would kill the parent process. The hook now has this guard:
+The hook file has a `main()` function that reads from stdin and calls `process.exit()`. Without a `if (require.main === module)` guard, `require()`-ing the hook (to import `analyzeTranscript`) killed the daemon process silently within seconds of startup — the hook would read empty stdin (`/dev/null`) and call `process.exit(0)`. Fixed in v1.10.1:
 
 ```javascript
 if (require.main === module) {
   main();
 }
 ```
+
+### Windows Terminal Multi-Tab Delivery (v1.10.0+)
+
+`src/delivery/windows-delivery.js` adds a second Windows delivery strategy using the `wt.exe` CLI:
+
+```powershell
+wt.exe -w 0 focus-tab --target <N>
+```
+
+For each tab `N` in the Windows Terminal window, the script:
+1. Calls `wt -w 0 focus-tab --target N` to bring that tab to foreground
+2. Re-activates the WT window via `$shell.AppActivate($wt.Id)`
+3. Sends the canonical 8-step keystroke sequence: ESC, ESC, `1{ENTER}` (dismiss menu), ESC, ESC, Ctrl+U, `continue{ENTER}`
+
+Tab count is estimated by counting `claude.exe` process descendants of `WindowsTerminal.exe`, capped at 20. The `wt.exe` path is detected via `execFile('wt', ['--version'])` rather than `fs.existsSync()`, which returns `false` for Windows App Execution Aliases even when `wt.exe` is installed.
 
 ## Commands
 
