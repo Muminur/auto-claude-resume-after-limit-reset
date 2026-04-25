@@ -28,7 +28,7 @@ const RATE_LIMIT_PATTERNS = [
   /Rate limit exceeded/i,
   /"type"\s*:\s*"rate_limit_error"/,
   /try again in\s+(\d+)\s*(minutes?|hours?|seconds?)/i,
-  /resets\s+(\d+)(am|pm)\s*\(([^)]+)\)/i,
+  /resets\s+(\d+)(?::(\d+))?(am|pm)\s*\(([^)]+)\)/i,
   /too many requests/i,
   /usage limit/i,
 ];
@@ -50,7 +50,7 @@ const FALSE_POSITIVE_PATTERNS = [
 ];
 
 const TIME_PATTERNS = {
-  resetTime: /resets\s+(\d+)(am|pm)\s*\(([^)]+)\)/i,
+  resetTime: /resets\s+(\d+)(?::(\d+))?(am|pm)\s*\(([^)]+)\)/i,
   tryAgainIn: /try again in\s+(\d+)\s*(minutes?|hours?|seconds?)/i,
 };
 
@@ -63,13 +63,14 @@ function isRealRateLimit(text) {
 function parseResetTime(message) {
   const resetMatch = message.match(TIME_PATTERNS.resetTime);
   if (resetMatch) {
-    const [, hour, ampm, timezone] = resetMatch;
+    const [, hour, minute, ampm, timezone] = resetMatch;
     const now = new Date();
     let resetHour = parseInt(hour, 10);
+    const resetMinute = minute ? parseInt(minute, 10) : 0;
     if (ampm.toLowerCase() === 'pm' && resetHour !== 12) resetHour += 12;
     else if (ampm.toLowerCase() === 'am' && resetHour === 12) resetHour = 0;
     const resetDate = new Date(now);
-    resetDate.setHours(resetHour, 0, 0, 0);
+    resetDate.setHours(resetHour, resetMinute, 0, 0);
     if (resetDate <= now) resetDate.setDate(resetDate.getDate() + 1);
     return { reset_time: resetDate.toISOString(), timezone: timezone.trim() };
   }
@@ -91,24 +92,64 @@ function parseResetTime(message) {
   return { reset_time: defaultReset.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' };
 }
 
+// Entry shapes that record user-typed text or our own hook output.
+// Matching rate-limit patterns inside these is a false positive — the user
+// pasted/typed the words, or the daemon already emitted them itself.
+function isUserOriginatedEntry(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+
+  // Meta entry written by the CLI when the user submits a prompt.
+  if (entry.type === 'last-prompt') return true;
+
+  // Our own Stop-hook output, recorded back into the transcript.
+  // Re-detecting it on the next file change would loop forever.
+  if (entry.attachment && entry.attachment.type === 'hook_system_message') return true;
+
+  // User-role messages: tool_result content can carry real API rate_limit_error
+  // payloads, but plain text is what the user typed. Skip when there is any
+  // non-tool_result content; keep when it's purely tool_results.
+  if (entry.type === 'user' && entry.message && entry.message.role === 'user') {
+    const content = entry.message.content;
+    if (typeof content === 'string') return true;
+    if (Array.isArray(content)) {
+      return content.some(c => c && typeof c === 'object' && c.type !== 'tool_result');
+    }
+  }
+
+  return false;
+}
+
 /**
- * Scan the tail of a JSONL file for rate limit messages.
- * Reads the last `tailBytes` bytes to avoid reading the entire file.
+ * Scan a JSONL file for rate limit messages.
+ *
+ * If `startOffset` is provided and less than the file size, reads only the bytes
+ * appended since that offset (used by the watcher to scan only new content).
+ * Otherwise reads the last `tailBytes` bytes (used on initial scan / by tests).
  *
  * @param {string} filePath - Path to the JSONL file
  * @param {number} tailBytes - Number of bytes to read from the end (default 16KB)
+ * @param {number|null} startOffset - Byte offset to start reading from
  * @returns {{ message: string, resetTime: object } | null}
  */
-function scanFileTail(filePath, tailBytes = 16384) {
+function scanFileTail(filePath, tailBytes = 16384, startOffset = null) {
   let content;
   try {
     const stat = fs.statSync(filePath);
     if (stat.size === 0) return null;
 
-    const readSize = Math.min(stat.size, tailBytes);
+    let readStart;
+    let readSize;
+    if (typeof startOffset === 'number' && startOffset >= 0 && startOffset < stat.size) {
+      readStart = startOffset;
+      readSize = stat.size - startOffset;
+    } else {
+      readSize = Math.min(stat.size, tailBytes);
+      readStart = stat.size - readSize;
+    }
+
     const buffer = Buffer.alloc(readSize);
     const fd = fs.openSync(filePath, 'r');
-    fs.readSync(fd, buffer, 0, readSize, stat.size - readSize);
+    fs.readSync(fd, buffer, 0, readSize, readStart);
     fs.closeSync(fd);
     content = buffer.toString('utf8');
   } catch {
@@ -130,21 +171,17 @@ function scanFileTail(filePath, tailBytes = 16384) {
       continue;
     }
 
-    // Stringify the entire line and check for rate limit patterns
-    if (isRealRateLimit(line)) {
-      return {
-        message: line.substring(0, 500),
-        ...parseResetTime(line),
-      };
-    }
-
-    // Parse as JSON and check specific fields
+    // Parse as JSON FIRST so we can filter by entry type before pattern matching.
+    // Skipping the raw-line shortcut prevents user-typed prompts and our own
+    // hook_system_message attachments from being misread as live rate limits.
     let entry;
     try {
       entry = JSON.parse(line);
     } catch {
       continue;
     }
+
+    if (isUserOriginatedEntry(entry)) continue;
 
     // Check all string fields at any depth by stringifying
     const entryStr = JSON.stringify(entry);
@@ -282,6 +319,19 @@ class ProcessWatcher {
   }
 
   _watchDir(dirPath) {
+    // Pre-populate sizes for existing .jsonl files so historical content is
+    // not re-scanned on startup or first-change. Without this, the watcher
+    // re-detects old rate-limit messages every time the daemon restarts.
+    try {
+      for (const filename of fs.readdirSync(dirPath)) {
+        if (!filename.endsWith('.jsonl')) continue;
+        const filePath = path.join(dirPath, filename);
+        try {
+          this._fileSizes[filePath] = fs.statSync(filePath).size;
+        } catch {}
+      }
+    } catch {}
+
     try {
       const watcher = fs.watch(dirPath, (eventType, filename) => {
         if (!filename || !filename.endsWith('.jsonl')) return;
@@ -294,10 +344,19 @@ class ProcessWatcher {
           delete this._debounceTimers[filePath];
         }, this._debounceMs);
 
-        // Only scan if file grew (new content appended)
+        // Only scan if file grew (new content appended), and only the new bytes.
+        let lastSize;
+        let currentSize;
         try {
-          const currentSize = fs.statSync(filePath).size;
-          const lastSize = this._fileSizes[filePath] || 0;
+          currentSize = fs.statSync(filePath).size;
+          lastSize = this._fileSizes[filePath];
+          if (typeof lastSize !== 'number') {
+            // First time we see this file — record current size and skip
+            // historical content. A real new rate-limit will arrive in a
+            // later append and be picked up then.
+            this._fileSizes[filePath] = currentSize;
+            return;
+          }
           if (currentSize <= lastSize) {
             this._fileSizes[filePath] = currentSize;
             return;
@@ -307,8 +366,8 @@ class ProcessWatcher {
           return;
         }
 
-        // Scan the tail for rate limit messages
-        const result = scanFileTail(filePath, this._tailBytes);
+        // Scan only the bytes appended since the last check.
+        const result = scanFileTail(filePath, this._tailBytes, lastSize);
         if (result) {
           this._log('warning', `Process watcher: rate limit found in ${filename}`);
           writeStatus(result, this._logFn);
@@ -337,4 +396,4 @@ class ProcessWatcher {
   }
 }
 
-module.exports = { ProcessWatcher, scanFileTail, isRealRateLimit, parseResetTime, writeStatus };
+module.exports = { ProcessWatcher, scanFileTail, isRealRateLimit, parseResetTime, writeStatus, isUserOriginatedEntry };

@@ -27,7 +27,7 @@ const RATE_LIMIT_PATTERNS = [
   /Rate limit exceeded/i,
   /"type"\s*:\s*"rate_limit_error"/,
   /try again in\s+(\d+)\s*(minutes?|hours?|seconds?)/i,
-  /resets\s+(\d+)(am|pm)\s*\(([^)]+)\)/i,
+  /resets\s+(\d+)(?::(\d+))?(am|pm)\s*\(([^)]+)\)/i,
   /too many requests/i,
 ];
 
@@ -45,7 +45,7 @@ const FALSE_POSITIVE_PATTERNS = [
 ];
 
 const TIME_PATTERNS = {
-  resetTime: /resets\s+(\d+)(am|pm)\s*\(([^)]+)\)/i,
+  resetTime: /resets\s+(\d+)(?::(\d+))?(am|pm)\s*\(([^)]+)\)/i,
   tryAgainIn: /try again in\s+(\d+)\s*(minutes?|hours?|seconds?)/i,
   isoTimestamp: /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z)/i,
 };
@@ -53,13 +53,14 @@ const TIME_PATTERNS = {
 function parseResetTime(message) {
   const resetMatch = message.match(TIME_PATTERNS.resetTime);
   if (resetMatch) {
-    const [, hour, ampm, timezone] = resetMatch;
+    const [, hour, minute, ampm, timezone] = resetMatch;
     const now = new Date();
     let resetHour = parseInt(hour, 10);
+    const resetMinute = minute ? parseInt(minute, 10) : 0;
     if (ampm.toLowerCase() === 'pm' && resetHour !== 12) resetHour += 12;
     else if (ampm.toLowerCase() === 'am' && resetHour === 12) resetHour = 0;
     const resetDate = new Date(now);
-    resetDate.setHours(resetHour, 0, 0, 0);
+    resetDate.setHours(resetHour, resetMinute, 0, 0);
     if (resetDate <= now) resetDate.setDate(resetDate.getDate() + 1);
     return { reset_time: resetDate.toISOString(), timezone: timezone.trim() };
   }

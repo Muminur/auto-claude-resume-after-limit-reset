@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { scanFileTail, isRealRateLimit, parseResetTime, writeStatus, ProcessWatcher } = require('../src/watcher/process-watcher');
+const { scanFileTail, isRealRateLimit, parseResetTime, writeStatus, ProcessWatcher, isUserOriginatedEntry } = require('../src/watcher/process-watcher');
 
 let passed = 0;
 let failed = 0;
@@ -105,6 +105,49 @@ const f7 = tmpFile('{"type":"assistant","message":"I will fix the rate limit hoo
 const r7 = scanFileTail(f7);
 assert(r7 === null, 'ignores false positive conversation');
 cleanup(f7);
+
+// Test: ignores user-typed prompt that pastes/quotes rate-limit text
+const f8 = tmpFile('{"type":"last-prompt","lastPrompt":"auto resume did not work. ⎿  You\'ve hit your limit · resets 10:29am (UTC)","sessionId":"abc"}\n');
+const r8 = scanFileTail(f8);
+assert(r8 === null, 'ignores user-typed last-prompt that quotes rate-limit text');
+cleanup(f8);
+
+// Test: ignores user-role message containing rate-limit text in plain content
+const f9 = tmpFile('{"type":"user","message":{"role":"user","content":[{"type":"text","text":"You\'ve hit your limit, can you fix?"}]}}\n');
+const r9 = scanFileTail(f9);
+assert(r9 === null, 'ignores user message with plain text mentioning rate limit');
+cleanup(f9);
+
+// Test: ignores our own hook_system_message attachment
+const f10 = tmpFile('{"type":"attachment","attachment":{"type":"hook_system_message","hookName":"Stop","content":"⚠️  Rate limit detected! Auto-resume will retry at 1:59 PM (UTC)"}}\n');
+const r10 = scanFileTail(f10);
+assert(r10 === null, 'ignores hook_system_message attachment from auto-resume');
+cleanup(f10);
+
+// Test: still detects real rate_limit_error inside a user-role tool_result
+const f11 = tmpFile('{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","content":"{\\"type\\":\\"rate_limit_error\\",\\"message\\":\\"too many requests\\"}"}]}}\n');
+const r11 = scanFileTail(f11);
+assert(r11 !== null, 'still detects rate_limit_error inside tool_result content');
+cleanup(f11);
+
+// Test: scans only newly appended bytes when startOffset is given
+const oldContent = '{"type":"system","message":"You\'re out of extra usage · resets 11pm (Asia/Dhaka)"}\n';
+const newContent = '{"type":"assistant","message":"hi"}\n';
+const f12 = tmpFile(oldContent + newContent);
+const r12 = scanFileTail(f12, 16384, oldContent.length);
+assert(r12 === null, 'startOffset skips already-seen historical rate-limit text');
+const r12b = scanFileTail(f12);
+assert(r12b !== null, 'tail-mode (no startOffset) still finds historical rate-limit text');
+cleanup(f12);
+
+console.log('\n=== isUserOriginatedEntry ===');
+assert(isUserOriginatedEntry({ type: 'last-prompt', lastPrompt: 'x' }) === true, 'last-prompt is user-originated');
+assert(isUserOriginatedEntry({ type: 'attachment', attachment: { type: 'hook_system_message', content: 'x' } }) === true, 'hook_system_message is user-originated');
+assert(isUserOriginatedEntry({ type: 'user', message: { role: 'user', content: 'hello' } }) === true, 'user with string content is user-originated');
+assert(isUserOriginatedEntry({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } }) === true, 'user with text content is user-originated');
+assert(isUserOriginatedEntry({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'x' }] } }) === false, 'user with only tool_result is NOT user-originated');
+assert(isUserOriginatedEntry({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] } }) === false, 'assistant entry is not user-originated');
+assert(isUserOriginatedEntry(null) === false, 'null is not user-originated');
 
 console.log('\n=== writeStatus ===');
 
