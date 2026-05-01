@@ -23,6 +23,7 @@ const STATUS_FILE = path.join(STATUS_DIR, 'status.json');
 // Only match ACTUAL API rate limit errors, not conversational mentions
 const RATE_LIMIT_PATTERNS = [
   /You've hit your limit/i,
+  /You're out of extra usage/i,
   /exceeded your current quota/i,
   /Rate limit exceeded/i,
   /"type"\s*:\s*"rate_limit_error"/,

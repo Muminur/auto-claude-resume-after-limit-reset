@@ -7,7 +7,9 @@ Automatically resumes Claude Code terminal sessions when rate limits reset. No m
 ```
 Claude Code hits rate limit
         ↓
-Stop hook detects "You've hit your limit · resets 8pm (Asia/Dhaka)"
+Stop hook detects rate limit message:
+  "You've hit your limit · resets 8pm (Asia/Dhaka)"
+  "You're out of extra usage · resets 10:50pm (Asia/Dhaka)"
         ↓
 Writes reset time to ~/.claude/auto-resume/status.json
         ↓

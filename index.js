@@ -230,7 +230,8 @@ function parseResetTime(message) {
 function isRateLimitMessage(message) {
   return (
     message.includes("hit your limit") ||
-    message.includes("You've hit your limit")
+    message.includes("You've hit your limit") ||
+    message.includes("out of extra usage")
   );
 }
 
