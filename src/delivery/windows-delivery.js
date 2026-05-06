@@ -87,7 +87,9 @@ async function tryWeztermCli(resumeText, log) {
     if (listOut) {
       const panes = JSON.parse(listOut);
       const claudePanes = panes.filter(
-        (p) => /claude/i.test(p.title || '') || /claude/i.test(p.cwd || '')
+        (p) => /claude/i.test(p.title || '')
+            || /claude/i.test(p.cwd || '')
+            || /[⠀-⣿]/.test(p.title || '')  // Claude Code Braille spinner
       );
       if (claudePanes.length) {
         targets = claudePanes;
@@ -102,10 +104,13 @@ async function tryWeztermCli(resumeText, log) {
   for (const target of targets) {
     const args = ['cli', 'send-text', '--no-paste'];
     if (target && target.pane_id != null) args.push('--pane-id', String(target.pane_id));
-    args.push(keyBytes.toString('binary'));
 
+    // Pipe bytes via stdin — more reliable than a binary CLI arg on Windows
+    // (Windows command-line parsing can strip \r (0x0D) when passed as a string arg)
     const ok = await new Promise((resolve) => {
-      execFile(weztermExe, args, { timeout: 5000 }, (err) => resolve(!err));
+      const child = execFile(weztermExe, args, { timeout: 5000 }, (err) => resolve(!err));
+      child.stdin.write(keyBytes);
+      child.stdin.end();
     });
 
     const label = target
