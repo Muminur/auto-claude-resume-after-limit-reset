@@ -74,8 +74,9 @@ async function tryWeztermCli(resumeText, log) {
     Buffer.from([0x0D]),         // CR (Enter)
   ]);
 
-  // Try to find the pane running Claude first
-  let paneId = null;
+  // Find ALL panes running Claude; fall back to active pane if none match.
+  // Rate limits are account-level — every Claude session needs the resume signal.
+  let targets = [null]; // null = active pane (no --pane-id flag)
   try {
     const listOut = await new Promise((resolve) => {
       execFile(weztermExe, ['cli', 'list', '--format', 'json'], { timeout: 3000 }, (err, stdout) => {
@@ -85,31 +86,44 @@ async function tryWeztermCli(resumeText, log) {
 
     if (listOut) {
       const panes = JSON.parse(listOut);
-      // Look for a pane whose title or cwd suggests it's running Claude
-      const claudePane = panes.find(
+      const claudePanes = panes.filter(
         (p) => /claude/i.test(p.title || '') || /claude/i.test(p.cwd || '')
       );
-      if (claudePane) {
-        paneId = claudePane.pane_id;
-        log('debug', `Found Claude pane ID ${paneId}: ${claudePane.title}`);
+      if (claudePanes.length) {
+        targets = claudePanes;
+        log('debug', `Found ${claudePanes.length} Claude pane(s): ${
+          claudePanes.map((p) => `pane ${p.pane_id}`).join(', ')
+        }`);
       }
     }
   } catch (_) {}
 
-  const args = ['cli', 'send-text', '--no-paste'];
-  if (paneId !== null) args.push('--pane-id', String(paneId));
-  args.push(keyBytes.toString('binary'));
+  let anySuccess = false;
+  for (const target of targets) {
+    const args = ['cli', 'send-text', '--no-paste'];
+    if (target && target.pane_id != null) args.push('--pane-id', String(target.pane_id));
+    args.push(keyBytes.toString('binary'));
 
-  const sent = await new Promise((resolve) => {
-    execFile(weztermExe, args, { timeout: 5000 }, (err) => {
-      resolve(!err);
+    const ok = await new Promise((resolve) => {
+      execFile(weztermExe, args, { timeout: 5000 }, (err) => resolve(!err));
     });
-  });
 
-  if (sent) {
-    log('success', `Delivered resume via WezTerm CLI${paneId !== null ? ` (pane ${paneId})` : ' (active pane)'}`);
+    const label = target
+      ? `pane ${target.pane_id} ("${truncate(target.title, 60)}")`
+      : 'active pane';
+    if (ok) {
+      anySuccess = true;
+      log('success', `Delivered resume via WezTerm CLI to ${label}`);
+    } else {
+      log('debug', `WezTerm CLI send-text failed for ${label}`);
+    }
   }
-  return sent;
+  return anySuccess;
+}
+
+function truncate(s, n) {
+  if (!s) return '';
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
 /**
