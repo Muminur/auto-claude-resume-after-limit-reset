@@ -108,6 +108,6 @@ describe('deliverResumeWindows orchestrator', () => {
       require('path').join(__dirname, '..', '..', 'src', 'delivery', 'windows-delivery.js'),
       'utf8'
     );
-    expect(src).toContain("method: 'wt-multi-tab'");
+    expect(src).toContain("'wt-multi-tab'");
   });
 });

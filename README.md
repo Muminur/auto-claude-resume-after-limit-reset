@@ -21,8 +21,9 @@ After reset + 10s safety delay:
     → Tier 2: PTY write to /dev/pts/N (works when screen is locked)
     → Tier 3: xdotool (Linux) / PTY+osascript (macOS)
   Windows:
-    → Tier 1: WezTerm CLI — injects bytes directly into Claude pane (no focus needed)
-    → Tier 2: PowerShell — walks process tree to find & activate the correct terminal window
+    → WezTerm CLI — injects bytes directly into every Claude pane (no focus needed)
+    → Windows Terminal multi-tab — wt.exe focus-tab to every WT tab (run independently)
+    → PowerShell fallback — walks process tree (only if both above found nothing)
   → Verifies via transcript activity
         ↓
 Claude Code resumes automatically
@@ -67,10 +68,9 @@ The daemon attempts delivery using the most reliable method first, falling back 
 |------|--------|--------------|----------|
 | 1 | tmux send-keys | Yes | Linux/macOS |
 | 2 | PTY write | Yes | Linux |
-| 2 | WezTerm CLI | Yes (no focus needed) | Windows |
-| 3 | Windows Terminal multi-tab | No | Windows |
-| 3 | xdotool/osascript | No | Linux/macOS |
-| 4 | PowerShell window targeting | No | Windows |
+| W1 | WezTerm CLI | Yes (no focus needed) | Windows — always attempted |
+| W2 | Windows Terminal multi-tab | No | Windows — always attempted |
+| W3 | PowerShell window targeting | No | Windows — fallback only |
 
 ### Cross-Platform Support
 

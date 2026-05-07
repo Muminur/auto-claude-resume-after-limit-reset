@@ -523,28 +523,39 @@ async function deliverResumeWindows(opts = {}) {
   const resumeText = opts.resumeText || 'continue';
   const log = opts.log || (() => {});
 
-  // Strategy 1: WezTerm CLI
+  let anySuccess = false;
+  const methods = [];
+
+  // Strategy 1: WezTerm CLI — always run; handles WezTerm panes independently of WT.
+  // Rate limits are account-level so all terminal types need the resume signal.
   try {
     const ok = await tryWeztermCli(resumeText, log);
-    if (ok) return { success: true, method: 'wezterm-cli', error: null };
+    if (ok) { anySuccess = true; methods.push('wezterm-cli'); }
   } catch (err) {
     log('debug', `WezTerm CLI error: ${err.message}`);
   }
 
-  // Strategy 2: Windows Terminal multi-tab via wt.exe focus-tab
+  // Strategy 2: Windows Terminal multi-tab — always run independently of WezTerm.
   try {
     const ok = await tryWindowsTerminalMultiTab(resumeText, log);
-    if (ok) return { success: true, method: 'wt-multi-tab', error: null };
+    if (ok) { anySuccess = true; methods.push('wt-multi-tab'); }
   } catch (err) {
     log('debug', `WT multi-tab error: ${err.message}`);
   }
 
-  // Strategy 3: PowerShell keystroke with window targeting (single tab)
-  try {
-    const ok = await tryPowerShellKeystroke(resumeText, log);
-    if (ok) return { success: true, method: 'powershell-sendkeys', error: null };
-  } catch (err) {
-    log('debug', `PowerShell keystroke error: ${err.message}`);
+  // Strategy 3: PowerShell keystroke fallback — only when neither terminal-specific
+  // strategy worked (i.e. Claude is in a standalone pwsh/cmd window).
+  if (!anySuccess) {
+    try {
+      const ok = await tryPowerShellKeystroke(resumeText, log);
+      if (ok) { anySuccess = true; methods.push('powershell-sendkeys'); }
+    } catch (err) {
+      log('debug', `PowerShell keystroke error: ${err.message}`);
+    }
+  }
+
+  if (anySuccess) {
+    return { success: true, method: methods.join('+'), error: null };
   }
 
   return {
