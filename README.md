@@ -229,7 +229,7 @@ The daemon tries 3 strategies in order:
 
 On Windows, the daemon uses a dedicated delivery module (`src/delivery/windows-delivery.js`) with four strategies in priority order:
 
-1. **WezTerm CLI** — Calls `wezterm cli send-text` to inject keystrokes directly into the Claude pane. Finds the pane by title/cwd pattern. No window focus required — works even when another app is active.
+1. **WezTerm CLI** — Calls `wezterm cli send-text` to inject keystrokes directly into **every** Claude pane. Panes are detected by three signals: title or cwd containing "claude", or title containing Claude Code's Braille activity-spinner characters (U+2800–U+28FF). Bytes are piped via stdin so control characters (ESC, Ctrl+U, CR) reach WezTerm unmodified. No window focus required — works even when another app is active.
 2. **Windows Terminal multi-tab** — Uses `wt.exe -w 0 focus-tab --target N` to switch to each tab in the Windows Terminal window, then sends the canonical resume keystroke sequence to each one. Tab count is estimated by counting `claude.exe` process descendants of the `WindowsTerminal.exe` process tree, capped at 20. The `wt.exe` path is probed via `execFile --version` to correctly handle the Windows App Execution Alias install location (`%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe`), which `fs.existsSync()` falsely reports as absent.
 3. **Process-tree targeting** — Walks from `node.exe`/`claude.exe` up the process tree to find the parent terminal (Windows Terminal, WezTerm, PowerShell). Uses `AppActivate(PID)` to bring that specific window to focus before sending keys — avoids sending to the wrong PowerShell window.
 4. **Title-based search** — Tries common terminal window titles (`WezTerm`, `Claude`, `Windows PowerShell`, `Terminal`).
@@ -341,9 +341,13 @@ echo "XAUTHORITY=$XAUTHORITY"
 
 ### Keystrokes only go to one tab
 
-**Cause:** Old version without tab cycling support.
+**Cause (Linux/macOS):** Old version without tab cycling support.
 
-**Fix:** Update `auto-resume-daemon.js` to the latest version with tab cycling (counts bash children of gnome-terminal-server, uses Ctrl+PageDown to cycle).
+**Fix (Linux/macOS):** Update to the latest version with tab cycling (counts bash children of gnome-terminal-server, uses Ctrl+PageDown to cycle).
+
+**Cause (Windows / WezTerm):** Pre-v1.10.4 only sent to the first matching pane. Pre-v1.10.5 could miss panes whose project name has no "claude" in the path (e.g. `carteltrading/`).
+
+**Fix (Windows / WezTerm):** v1.10.5+ delivers to every Claude Code pane. Detection uses three signals: title/cwd contains "claude", or title contains Claude Code's Braille spinner characters. If your pane is still missed, check that `wezterm cli list` shows it and that its title or cwd matches one of those signals.
 
 ### Crash-loop (many restarts)
 
