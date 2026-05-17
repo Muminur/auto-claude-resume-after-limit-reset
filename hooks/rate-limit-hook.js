@@ -24,6 +24,7 @@ const STATUS_FILE = path.join(STATUS_DIR, 'status.json');
 const RATE_LIMIT_PATTERNS = [
   /You've hit your limit/i,
   /You're out of extra usage/i,
+  /You['’]ve hit your org['’]s monthly usage limit/i,
   /exceeded your current quota/i,
   /Rate limit exceeded/i,
   /"type"\s*:\s*"rate_limit_error"/,

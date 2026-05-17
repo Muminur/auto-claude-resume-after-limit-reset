@@ -10,6 +10,7 @@ Claude Code hits rate limit
 Stop hook detects rate limit message:
   "You've hit your limit · resets 8pm (Asia/Dhaka)"
   "You're out of extra usage · resets 10:50pm (Asia/Dhaka)"
+  "You've hit your org's monthly usage limit"
         ↓
 Writes reset time to ~/.claude/auto-resume/status.json
         ↓

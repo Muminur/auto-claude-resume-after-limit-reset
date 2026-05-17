@@ -38,6 +38,8 @@ try { fs.unlinkSync(STATUS_FILE); } catch {}
 console.log('\n=== isRealRateLimit ===');
 assert(isRealRateLimit("You're out of extra usage \u00b7 resets 11pm (Asia/Dhaka)") === true, 'detects extra usage message');
 assert(isRealRateLimit("You've hit your limit") === true, 'detects hit limit');
+assert(isRealRateLimit("You've hit your org's monthly usage limit") === true, 'detects org monthly usage limit');
+assert(isRealRateLimit("You’ve hit your org’s monthly usage limit") === true, 'detects org monthly limit with curly quotes');
 assert(isRealRateLimit("Rate limit exceeded") === true, 'detects rate limit exceeded');
 assert(isRealRateLimit("try again in 30 minutes") === true, 'detects try again');
 assert(isRealRateLimit("too many requests") === true, 'detects too many requests');

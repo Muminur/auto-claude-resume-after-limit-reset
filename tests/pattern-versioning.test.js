@@ -67,6 +67,7 @@ describe('Rate Limit Pattern Versioning', () => {
       const patterns = loadPatterns({});
 
       expect(matchesRateLimitPattern("You've hit your usage limit resets 7pm (UTC)", patterns)).toBe(true);
+      expect(matchesRateLimitPattern("You've hit your org's monthly usage limit", patterns)).toBe(true);
       expect(matchesRateLimitPattern("Rate limit exceeded", patterns)).toBe(true);
       expect(matchesRateLimitPattern("too many requests", patterns)).toBe(true);
     });

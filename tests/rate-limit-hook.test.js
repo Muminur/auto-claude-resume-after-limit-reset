@@ -447,6 +447,16 @@ describe('rate-limit-hook - Subagent Transcript Scanning', () => {
         expect(isRateLimitMessage(text)).toBe(true);
       });
 
+      it('should detect "You\'ve hit your org\'s monthly usage limit"', () => {
+        const text = "You've hit your org's monthly usage limit";
+        expect(isRateLimitMessage(text)).toBe(true);
+      });
+
+      it('should detect org monthly limit with curly quotes', () => {
+        const text = "You’ve hit your org’s monthly usage limit";
+        expect(isRateLimitMessage(text)).toBe(true);
+      });
+
       it('should detect various time formats', () => {
         const messages = [
           "You've hit your limit · resets 7pm (UTC)",

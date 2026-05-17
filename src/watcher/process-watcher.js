@@ -24,6 +24,7 @@ const RATE_LIMIT_PATTERNS = [
   /You're out of extra usage/i,
   /out of extra usage/i,
   /out of.*usage.*resets/i,
+  /You['’]ve hit your org['’]s monthly usage limit/i,
   /exceeded your current quota/i,
   /Rate limit exceeded/i,
   /"type"\s*:\s*"rate_limit_error"/,

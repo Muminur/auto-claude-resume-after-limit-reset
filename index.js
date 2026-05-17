@@ -231,7 +231,9 @@ function isRateLimitMessage(message) {
   return (
     message.includes("hit your limit") ||
     message.includes("You've hit your limit") ||
-    message.includes("out of extra usage")
+    message.includes("out of extra usage") ||
+    message.includes("hit your org") ||
+    message.includes("monthly usage limit")
   );
 }
 
