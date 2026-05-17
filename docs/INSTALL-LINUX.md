@@ -12,13 +12,13 @@ Linux supports **all three resume tiers**, giving you the most reliable screen-l
 |------|--------|---------------------|---------------|
 | **Tier 1** | tmux (send-keys) | Yes | Full support |
 | **Tier 2** | PTY (direct write) | Yes | Full support (Linux-only) |
-| **Tier 3** | xdotool (keystroke injection) | No (requires active X11 session) | Full support |
+| **Tier 3** | xdotool (X11) / ydotool (Wayland) | No (requires active display session) | Full support — auto-detects Wayland |
 
 Tier 1 (tmux) and Tier 2 (PTY) are **Linux advantages** for screen-locked resume -- they work even when your screen is locked, SSH sessions are disconnected, or no graphical display is available.
 
 ## Prerequisites
 
-- Linux with X11 display (Wayland has limited support) -- only needed for Tier 3
+- Linux with X11 or Wayland display -- only needed for Tier 3 (auto-detects session type)
 - Claude Code CLI installed
 - Node.js 16+ ([Installation guide](https://nodejs.org/en/download/package-manager))
 - `xdotool` (for sending keystrokes -- Tier 3 fallback)
@@ -282,10 +282,12 @@ Update to the latest `auto-resume-daemon.js` which includes tab cycling. The dae
 
 ### Running on Wayland
 
-xdotool requires X11. Options:
-1. **Switch to X11 session** at login screen
-2. **Use XWayland:** `GDK_BACKEND=x11 gnome-terminal`
-3. **Use ydotool** (Wayland alternative — requires root or uinput group)
+The daemon auto-detects Wayland via `$XDG_SESSION_TYPE` and prefers `ydotool` when available:
+```bash
+sudo apt-get install -y ydotool
+sudo usermod -aG input $USER  # Required for ydotool without root
+```
+If `ydotool` is not installed, the daemon falls back to `xdotool` (which works under XWayland).
 
 ### Node.js Not Found
 
@@ -318,7 +320,7 @@ chmod +x ~/.claude/auto-resume/auto-resume-daemon.js
 | Close Claude Code, reopen | Yes | SessionStart hook auto-starts daemon |
 | Reboot | Yes | systemd service auto-starts; SessionStart hook as fallback |
 | Close terminal | Yes | Daemon runs in its own process (systemd-managed) |
-| Wayland session | Partial | Daemon starts fine, but xdotool may not send keystrokes |
+| Wayland session | Yes | Daemon auto-detects Wayland and uses ydotool; falls back to xdotool via XWayland |
 
 ---
 

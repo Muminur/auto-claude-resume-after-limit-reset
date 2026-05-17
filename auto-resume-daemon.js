@@ -27,6 +27,13 @@ const { deliverResume } = require('./src/delivery/tiered-delivery');
 const { verifyResumeByTranscript } = require('./src/verification/transcript-verifier');
 const { RateLimitQueue } = require('./src/queue/rate-limit-queue');
 
+let hmacIntegrity = null;
+try {
+  hmacIntegrity = require('./src/modules/hmac-integrity');
+} catch (_) {
+  // HMAC module not available — skip verification
+}
+
 // Load modules with graceful fallback
 let configManager = null;
 let AnalyticsCollector = null;
@@ -391,33 +398,45 @@ function sendNotification(title, message) {
 }
 
 /**
- * Send keystrokes via xdotool (extracted from original Linux branch).
+ * Send keystrokes via xdotool or ydotool (Wayland-compatible fallback).
  * Used as Tier 3 fallback by the tiered delivery system.
+ * Detects Wayland sessions and prefers ydotool when available.
  * @param {number|null} claudePid - Claude Code PID for targeted window finding
  * @returns {Promise<void>}
  */
 function sendContinueViaXdotool(claudePid) {
   return new Promise((resolve, reject) => {
-    // Use which to find xdotool (more reliable across environments than command -v)
-    exec('which xdotool 2>/dev/null || command -v xdotool 2>/dev/null', (error, xdotoolPath) => {
-      const xdotool = xdotoolPath ? xdotoolPath.trim() : null;
-      if (error || !xdotool) {
-        log('error', 'xdotool not found. Please install it:');
+    const isWayland = process.env.XDG_SESSION_TYPE === 'wayland' || !!process.env.WAYLAND_DISPLAY;
+
+    // On Wayland, try ydotool first; fall back to xdotool (works under XWayland)
+    const findToolCmd = isWayland
+      ? 'which ydotool 2>/dev/null || which xdotool 2>/dev/null || command -v xdotool 2>/dev/null'
+      : 'which xdotool 2>/dev/null || command -v xdotool 2>/dev/null';
+
+    exec(findToolCmd, (error, toolPath) => {
+      const tool = toolPath ? toolPath.trim() : null;
+      if (error || !tool) {
+        log('error', isWayland
+          ? 'Neither ydotool nor xdotool found. Please install one:'
+          : 'xdotool not found. Please install it:');
         log('info', '  Ubuntu/Debian: sudo apt-get install xdotool');
+        if (isWayland) log('info', '  Wayland: sudo apt-get install ydotool');
         log('info', '  RHEL/CentOS: sudo yum install xdotool');
         log('info', '  Arch: sudo pacman -S xdotool');
-        reject(new Error('xdotool not found'));
+        reject(new Error('xdotool/ydotool not found'));
         return;
       }
 
-      log('debug', `Using xdotool at: ${xdotool}`);
+      const useYdotool = tool.includes('ydotool');
+      log('debug', `Using ${useYdotool ? 'ydotool' : 'xdotool'} at: ${tool}`);
 
       // Write shell script to temp file to avoid exec escaping/buffer issues
       const tempScript = path.join(os.tmpdir(), `claude-auto-resume-send-${process.pid}.sh`);
       const scriptLines = [
         '#!/bin/sh',
         'set +e',
-        `XDOT="${xdotool}"`,
+        `XDOT="${tool}"`,
+        `USE_YDOTOOL=${useYdotool ? '1' : '0'}`,
         'SENT=0',
         'STRATEGY=""',
         'WINDOW_IDS=""',
@@ -1033,6 +1052,15 @@ function readStatus() {
       return null;
     }
 
+    // Verify HMAC integrity if module available and status is signed
+    if (hmacIntegrity && status._hmac) {
+      const { valid } = hmacIntegrity.verifyStatus(status);
+      if (!valid) {
+        log('warning', 'Status file HMAC verification failed — possible tampering, skipping');
+        return null;
+      }
+    }
+
     return status;
   } catch (err) {
     log('error', `Failed to read status file: ${err.message}`);
@@ -1602,8 +1630,16 @@ function setupSignalHandlers() {
     process.exit(0);
   };
 
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => {
+    const forceExit = setTimeout(() => process.exit(1), 5000);
+    forceExit.unref();
+    shutdown('SIGINT');
+  });
+  process.on('SIGTERM', () => {
+    const forceExit = setTimeout(() => process.exit(1), 5000);
+    forceExit.unref();
+    shutdown('SIGTERM');
+  });
 
   // Handle uncaught errors - but NOT EPIPE (that's expected in background)
   process.on('uncaughtException', async (err) => {
@@ -1615,6 +1651,9 @@ function setupSignalHandlers() {
 
     log('error', `Uncaught exception: ${err.message}`);
     log('error', err.stack);
+
+    const forceExit = setTimeout(() => process.exit(1), 5000);
+    forceExit.unref();
 
     // Last-gasp death notification
     if (NotificationManager) {

@@ -42,7 +42,7 @@ Claude Code resumes automatically
 - **Tab Cycling** — Handles multiple Claude Code sessions in gnome-terminal tabs
 - **Background Daemon** — Runs as systemd service (Linux) or background process
 - **Crash-Loop Protection** — `StartLimitBurst=3`, `RestartSec=60`, 30s self-protection
-- **Cross-Platform** — Linux (tmux/PTY/xdotool), macOS (tmux/PTY/osascript), Windows (WezTerm CLI / PowerShell window targeting)
+- **Cross-Platform** — Linux (tmux/PTY/xdotool/ydotool), macOS (tmux/PTY/osascript), Windows (WezTerm CLI / PowerShell window targeting)
 - **Zero Configuration** — Just install and forget
 - **Self-Watchdog** — Memory monitoring (exits at 200MB), log rotation (1MB max)
 - **Retry with Backoff** — 4 retries with exponential backoff if resume fails
@@ -55,10 +55,19 @@ Claude Code resumes automatically
 - **Proactive Usage Warning** — Warns at 80% of historical rate limit threshold via PostToolUse hook
 - **Hot-Reload Config** — Watches `config.json` for changes and reloads in-memory without restart
 - **Pattern Versioning** — Configurable rate limit detection patterns with version tracking
-- **HMAC Integrity** — Signs `status.json` with HMAC-SHA256 to prevent tampering
+- **HMAC Integrity** — Signs `status.json` with HMAC-SHA256 and verifies before processing to prevent tampering
 - **Simulate Command** — `/auto-resume:simulate` creates test rate limit with 30s countdown
 - **Status Line** — `GET /status-line` endpoint returns daemon health as single-line string
 - **O_NOCTTY PTY Write** — PTY writes use `O_NOCTTY` flag so the TTY never becomes the daemon's controlling terminal, preventing signal bleed
+- **PTY Write Timeout** — PTY delivery times out after 5 seconds to prevent the daemon from blocking on a hung terminal
+- **Atomic File Writes** — All `status.json` writers use write-to-tmp-then-rename to prevent corruption from concurrent access
+- **Graceful Shutdown Timeout** — Daemon force-exits after 5 seconds if async shutdown hangs
+- **Wayland Support** — Detects Wayland sessions and prefers `ydotool` over `xdotool` for keystroke injection
+- **Windows Minimize Restore** — Uses P/Invoke `ShowWindow(SW_RESTORE)` before `AppActivate` so minimized terminals receive keystrokes
+- **Queue Auto-Cleanup** — Completed rate limit entries older than 30 days are automatically pruned
+- **Watcher Resource Limits** — File watcher count capped at 50 with automatic cleanup of stale entries
+- **Path Traversal Guard** — Transcript scanner validates real paths to prevent symlink-based directory escape
+- **Org Monthly Limit Detection** — Detects "You've hit your org's monthly usage limit" message
 - **Hook Module Exports** — `rate-limit-hook.js` exports `analyzeTranscriptTail`, `parseResetTime`, and `isRealRateLimit` so the daemon can import them directly without spawning a subprocess
 
 ## Architecture: Tiered Delivery
@@ -77,7 +86,8 @@ The daemon attempts delivery using the most reliable method first, falling back 
 
 | Platform | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
 |----------|--------|--------|--------|--------|
-| Linux | tmux send-keys | PTY write (`/dev/pts/N`) | xdotool | — |
+| Linux (X11) | tmux send-keys | PTY write (`/dev/pts/N`) | xdotool | — |
+| Linux (Wayland) | tmux send-keys | PTY write (`/dev/pts/N`) | ydotool (auto-detected) | xdotool (XWayland) |
 | macOS | tmux send-keys | PTY write | osascript | — |
 | Windows | WezTerm CLI (pane injection) | Windows Terminal multi-tab (`wt.exe`) | PowerShell process-tree targeting | title-based window search |
 
@@ -408,11 +418,20 @@ cd auto-claude-resume-after-limit-reset && git pull && ./install.sh
 ]
 ```
 
+## Security
+
+- **HMAC-SHA256 Integrity** — `status.json` is signed on write and verified on read. Tampered files are rejected.
+- **No Shell Interpolation** — All child process calls use `execFile()` with argument arrays, never `exec()` with template strings.
+- **Atomic Writes** — All `status.json` writers use tmp-file-then-rename to prevent corruption from concurrent access.
+- **Path Traversal Guard** — Transcript scanner validates `realpathSync` to prevent symlink escape from `~/.claude/projects/`.
+- **O_NOCTTY Flag** — PTY writes use `O_NOCTTY` so the daemon never acquires a controlling terminal.
+
 ## Dependencies
 
 - **Node.js** >= 16.0.0
 - **tmux** (optional, recommended) — Tier 1 screen-lock-safe delivery
-- **xdotool** (Linux only) — Tier 3 fallback `sudo apt-get install xdotool`
+- **xdotool** (Linux X11 only) — Tier 3 fallback `sudo apt-get install xdotool`
+- **ydotool** (Linux Wayland) — Tier 3 alternative `sudo apt-get install ydotool`
 - **chokidar** — File watching
 - **ws** — WebSocket server
 - **node-notifier** — Desktop notifications

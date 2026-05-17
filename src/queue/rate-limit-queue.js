@@ -46,7 +46,18 @@ class RateLimitQueue {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(this.statusFile, JSON.stringify(data, null, 2), 'utf8');
+    // Prune completed entries older than 30 days
+    if (Array.isArray(data.queue)) {
+      const maxAge = 30 * 24 * 60 * 60 * 1000;
+      data.queue = data.queue.filter((entry) => {
+        if (entry.status !== 'completed' || !entry.completed_at) return true;
+        return (Date.now() - new Date(entry.completed_at).getTime()) < maxAge;
+      });
+    }
+    // Atomic write: write to tmp file then rename
+    const tmpFile = this.statusFile + '.tmp';
+    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf8');
+    fs.renameSync(tmpFile, this.statusFile);
   }
 
   addDetection(detection) {

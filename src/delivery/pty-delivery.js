@@ -40,10 +40,12 @@ async function resolvePtyMacOS(pid) {
 }
 
 async function sendViaPty(ptyPath, text, opts = {}) {
-  return new Promise((resolve, reject) => {
+  const PTY_TIMEOUT_MS = 5000;
+
+  const writePromise = new Promise((resolve, reject) => {
     try {
       const menuSelection = opts.menuSelection || '1';
-      const fd = fs.openSync(ptyPath, 'w');
+      const fd = fs.openSync(ptyPath, fs.constants.O_WRONLY | fs.constants.O_NOCTTY);
 
       // Phase 1: Dismiss any open dialog
       fs.writeSync(fd, Buffer.from([0x1B])); // Escape
@@ -64,6 +66,12 @@ async function sendViaPty(ptyPath, text, opts = {}) {
       reject(new Error(`PTY write failed for ${ptyPath}: ${err.message}`));
     }
   });
+
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(`PTY write timed out after ${PTY_TIMEOUT_MS}ms for ${ptyPath}`)), PTY_TIMEOUT_MS);
+  });
+
+  return Promise.race([writePromise, timeoutPromise]);
 }
 
 module.exports = { resolvePty, sendViaPty };

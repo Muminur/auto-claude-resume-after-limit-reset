@@ -1,4 +1,4 @@
-const { execFile, exec } = require('child_process');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -177,6 +177,7 @@ function buildWindowsKeystrokeScript(resumeText) {
 
   return `
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -Name NativeWin -Namespace AutoResume -MemberDefinition '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'
 $shell = New-Object -ComObject WScript.Shell
 $sent = $false
 $myPid = $PID
@@ -210,6 +211,7 @@ foreach ($name in $claudeProcessNames) {
             try {
                 $ancestor = Get-Process -Id $ancestorId -ErrorAction SilentlyContinue
                 if ($ancestor -and $ancestor.MainWindowHandle -ne 0 -and $ancestor.Id -ne $myPid) {
+                    try { [AutoResume.NativeWin]::ShowWindow($ancestor.MainWindowHandle, 9) } catch {}
                     if ($shell.AppActivate($ancestor.Id)) {
                         Send-ResumeKeys "$($ancestor.Name) (PID $($ancestor.Id), ancestor of $name PID $($proc.Id))"
                         $sent = $true
@@ -232,6 +234,7 @@ if (-not $sent) {
             $procs = Get-Process -Name $name -ErrorAction SilentlyContinue |
                      Where-Object { $_.Id -ne $myPid -and $_.MainWindowHandle -ne 0 }
             foreach ($proc in $procs) {
+                try { [AutoResume.NativeWin]::ShowWindow($proc.MainWindowHandle, 9) } catch {}
                 if ($shell.AppActivate($proc.Id)) {
                     Send-ResumeKeys "$name (PID $($proc.Id))"
                     $sent = $true
@@ -330,6 +333,7 @@ function buildMultiTabScript(resumeText, wtExePath, maxTabs = 20) {
 
   return `
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -Name NativeWin -Namespace AutoResume -MemberDefinition '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'
 $shell = New-Object -ComObject WScript.Shell
 $wtExe = '${escapedWt}'
 $myPid = $PID
@@ -383,7 +387,8 @@ if ($tabCount -gt ${maxTabs}) { $tabCount = ${maxTabs} }
 
 Write-Output "Targeting $tabCount tab(s) in WindowsTerminal PID $($wt.Id)"
 
-# Activate the WT window so keystrokes land in it
+# Activate the WT window so keystrokes land in it (restore first if minimized)
+try { [AutoResume.NativeWin]::ShowWindow($wt.MainWindowHandle, 9) } catch {}
 $null = $shell.AppActivate($wt.Id)
 Start-Sleep -Milliseconds 400
 
@@ -393,6 +398,7 @@ for ($i = 0; $i -lt $tabCount; $i++) {
     & $wtExe -w 0 focus-tab --target $i 2>$null
     Start-Sleep -Milliseconds 700
     # Re-activate WT in case focus drifted
+    try { [AutoResume.NativeWin]::ShowWindow($wt.MainWindowHandle, 9) } catch {}
     $null = $shell.AppActivate($wt.Id)
     Start-Sleep -Milliseconds 200
 ${keystrokeBlock}
@@ -445,8 +451,9 @@ async function tryWindowsTerminalMultiTab(resumeText, log) {
   }
 
   return new Promise((resolve) => {
-    exec(
-      `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tempScript}"`,
+    execFile(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tempScript],
       { timeout: 60000 },
       (error, stdout, stderr) => {
         try { fs.unlinkSync(tempScript); } catch (_) {}
@@ -487,8 +494,9 @@ async function tryPowerShellKeystroke(resumeText, log) {
   }
 
   return new Promise((resolve) => {
-    exec(
-      `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tempScript}"`,
+    execFile(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tempScript],
       { timeout: 15000 },
       (error, stdout, stderr) => {
         try { fs.unlinkSync(tempScript); } catch (_) {}

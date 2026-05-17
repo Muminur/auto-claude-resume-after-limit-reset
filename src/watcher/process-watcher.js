@@ -246,7 +246,10 @@ function writeStatus(rateLimitInfo, logFn) {
     detected_by: 'process_watcher',
   };
 
-  fs.writeFileSync(STATUS_FILE, JSON.stringify(status, null, 2), 'utf8');
+  // Atomic write: tmp file + rename
+  const tmpFile = STATUS_FILE + '.tmp';
+  fs.writeFileSync(tmpFile, JSON.stringify(status, null, 2), 'utf8');
+  fs.renameSync(tmpFile, STATUS_FILE);
   if (logFn) logFn('success', `Process watcher: Rate limit detected! Reset: ${rateLimitInfo.reset_time}`);
   return true;
 }
@@ -266,6 +269,8 @@ class ProcessWatcher {
     this._debounceTimers = {};
     this._fileSizes = {};  // Track file sizes to detect appends
     this._running = false;
+    this._maxWatchers = 50;
+    this._cleanupInterval = null;
   }
 
   _log(level, msg) {
@@ -307,6 +312,8 @@ class ProcessWatcher {
         if (eventType === 'rename' && filename) {
           const newDir = path.join(CLAUDE_PROJECTS_DIR, filename);
           try {
+            const realNewDir = fs.realpathSync(newDir);
+            if (!realNewDir.startsWith(CLAUDE_PROJECTS_DIR)) return;
             if (fs.statSync(newDir).isDirectory()) {
               this._watchDir(newDir);
             }
@@ -316,6 +323,22 @@ class ProcessWatcher {
       this._watchers.push(rootWatcher);
     } catch {}
 
+    // Periodically prune stale entries from _debounceTimers and _fileSizes
+    this._cleanupInterval = setInterval(() => {
+      if (!this._running) return;
+      for (const filePath of Object.keys(this._fileSizes)) {
+        if (!fs.existsSync(filePath)) {
+          delete this._fileSizes[filePath];
+        }
+      }
+      for (const filePath of Object.keys(this._debounceTimers)) {
+        if (!fs.existsSync(filePath)) {
+          clearTimeout(this._debounceTimers[filePath]);
+          delete this._debounceTimers[filePath];
+        }
+      }
+    }, 60000);
+
     this._log('info', `Process watcher: monitoring ${this._watchers.length - 1} project directories`);
   }
 
@@ -324,20 +347,35 @@ class ProcessWatcher {
     // not re-scanned on startup or first-change. Without this, the watcher
     // re-detects old rate-limit messages every time the daemon restarts.
     try {
-      for (const filename of fs.readdirSync(dirPath)) {
-        if (!filename.endsWith('.jsonl')) continue;
-        const filePath = path.join(dirPath, filename);
+      for (const entry of fs.readdirSync(dirPath)) {
+        if (!entry.endsWith('.jsonl')) continue;
+        const filePath = path.join(dirPath, entry);
         try {
+          const realFilePath = fs.realpathSync(filePath);
+          if (!realFilePath.startsWith(CLAUDE_PROJECTS_DIR)) continue;
           this._fileSizes[filePath] = fs.statSync(filePath).size;
         } catch {}
       }
     } catch {}
 
     try {
+      // Cap total watchers: if at the limit, evict the oldest per-dir watcher
+      // (keep the root watcher, which is always last in the array)
+      if (this._watchers.length >= this._maxWatchers) {
+        const oldest = this._watchers.shift();
+        try { oldest.close(); } catch {}
+      }
+
       const watcher = fs.watch(dirPath, (eventType, filename) => {
         if (!filename || !filename.endsWith('.jsonl')) return;
 
         const filePath = path.join(dirPath, filename);
+        try {
+          const realFilePath = fs.realpathSync(filePath);
+          if (!realFilePath.startsWith(CLAUDE_PROJECTS_DIR)) return;
+        } catch {
+          return;
+        }
 
         // Debounce: don't scan the same file more than once per debounceMs
         if (this._debounceTimers[filePath]) return;
@@ -385,6 +423,10 @@ class ProcessWatcher {
    */
   stop() {
     this._running = false;
+    if (this._cleanupInterval) {
+      clearInterval(this._cleanupInterval);
+      this._cleanupInterval = null;
+    }
     for (const watcher of this._watchers) {
       try { watcher.close(); } catch {}
     }

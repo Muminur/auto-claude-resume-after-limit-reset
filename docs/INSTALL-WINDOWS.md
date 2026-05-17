@@ -9,8 +9,8 @@ The daemon tries three strategies in order, falling through to the next if the c
 | Tier | Method | Requires focus? | Notes |
 |------|--------|----------------|-------|
 | **1** | WezTerm CLI (`wezterm cli send-text`) | No | Injects bytes directly into every Claude pane. Detects panes by title/cwd or Braille spinner characters. |
-| **2** | Windows Terminal multi-tab (`wt.exe focus-tab`) | Yes | Iterates every tab; estimates tab count from `claude.exe` descendants. |
-| **3** | PowerShell SendKeys + process-tree targeting | Yes | Walks from `node.exe`/`claude.exe` up the tree to activate the correct terminal window. Falls back to title-based search. |
+| **2** | Windows Terminal multi-tab (`wt.exe focus-tab`) | Yes | Iterates every tab; estimates tab count from `claude.exe` descendants. Auto-restores minimized windows. |
+| **3** | PowerShell SendKeys + process-tree targeting | Yes | Walks from `node.exe`/`claude.exe` up the tree to activate the correct terminal window. Auto-restores minimized windows via `ShowWindow(SW_RESTORE)`. |
 
 Tier 1 (Linux/macOS equivalents tmux and PTY) are not available on Windows; the daemon skips them automatically. No manual configuration is needed — just install WezTerm if you want Tier 1.
 

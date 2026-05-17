@@ -139,7 +139,7 @@ function isDaemonHeartbeatFresh() {
       return true;
     }
     const age = Date.now() - data.timestamp;
-    return age < 120000; // 120 seconds
+    return age < 60000; // 60 seconds — tighter window to catch wedged daemons faster
   } catch (e) {
     // Can't read heartbeat — assume fresh to avoid false restarts
     return true;

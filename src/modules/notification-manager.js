@@ -323,9 +323,9 @@ class NotificationManager {
    */
   async _showWindowsFallback(title, message) {
     try {
-      const { exec } = require('child_process');
+      const { execFile } = require('child_process');
 
-      // Escape single quotes and backslashes in the message and title
+      // Escape single quotes and backtick-newlines for PowerShell string literals
       const escapeForPowerShell = (str) => {
         return str
           .replace(/\\/g, '\\\\')
@@ -336,12 +336,12 @@ class NotificationManager {
       const escapedTitle = escapeForPowerShell(title);
       const escapedMessage = escapeForPowerShell(message);
 
-      const command = `powershell -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('${escapedMessage}', '${escapedTitle}', 'OK', 'Information')"`;
+      const psScript = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('${escapedMessage}', '${escapedTitle}', 'OK', 'Information')`;
 
       this._log('debug', 'Showing Windows PowerShell MessageBox fallback');
 
       return new Promise((resolve) => {
-        exec(command, { windowsHide: true }, (error, stdout, stderr) => {
+        execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', psScript], { windowsHide: true, timeout: 10000 }, (error, stdout, stderr) => {
           if (error) {
             this._log('error', `Windows fallback failed: ${error.message}`);
             resolve(false);
@@ -366,9 +366,9 @@ class NotificationManager {
    */
   async _showMacOSFallback(title, message) {
     try {
-      const { exec } = require('child_process');
+      const { execFile } = require('child_process');
 
-      // Escape single quotes and backslashes for AppleScript
+      // Escape double quotes for AppleScript string literals
       const escapeForAppleScript = (str) => {
         return str
           .replace(/\\/g, '\\\\')
@@ -379,12 +379,12 @@ class NotificationManager {
       const escapedTitle = escapeForAppleScript(title);
       const escapedMessage = escapeForAppleScript(message);
 
-      const command = `osascript -e 'display notification "${escapedMessage}" with title "${escapedTitle}"'`;
+      const script = `display notification "${escapedMessage}" with title "${escapedTitle}"`;
 
       this._log('debug', 'Showing macOS osascript notification fallback');
 
       return new Promise((resolve) => {
-        exec(command, (error, stdout, stderr) => {
+        execFile('osascript', ['-e', script], { timeout: 10000 }, (error, stdout, stderr) => {
           if (error) {
             this._log('error', `macOS fallback failed: ${error.message}`);
             resolve(false);
@@ -409,22 +409,12 @@ class NotificationManager {
    */
   async _showLinuxFallback(title, message) {
     try {
-      const { exec } = require('child_process');
-
-      // Escape single quotes for shell
-      const escapeForShell = (str) => {
-        return str.replace(/'/g, "'\\''");
-      };
-
-      const escapedTitle = escapeForShell(title);
-      const escapedMessage = escapeForShell(message);
-
-      const command = `notify-send '${escapedTitle}' '${escapedMessage}'`;
+      const { execFile } = require('child_process');
 
       this._log('debug', 'Showing Linux notify-send fallback');
 
       return new Promise((resolve) => {
-        exec(command, (error, stdout, stderr) => {
+        execFile('notify-send', [title, message], { timeout: 10000 }, (error, stdout, stderr) => {
           if (error) {
             this._log('error', `Linux fallback failed: ${error.message}`);
             resolve(false);

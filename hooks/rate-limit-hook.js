@@ -199,7 +199,10 @@ function updateStatusFile(rateLimitInfo, sessionId) {
     status.sessions.push(trackId);
   }
 
-  fs.writeFileSync(STATUS_FILE, JSON.stringify(status, null, 2), 'utf8');
+  // Atomic write: tmp file + rename to prevent corruption from concurrent writers
+  const tmpFile = STATUS_FILE + '.tmp';
+  fs.writeFileSync(tmpFile, JSON.stringify(status, null, 2), 'utf8');
+  fs.renameSync(tmpFile, STATUS_FILE);
 }
 
 function formatResetTime(resetTime, timezone) {
