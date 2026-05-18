@@ -207,10 +207,10 @@ function isDaemonRunning() {
       try {
         process.kill(pid, 'SIGKILL');
       } catch (e) {
-        // Ignore kill errors
+        console.error(`[ensure-daemon] Failed to SIGKILL wedged daemon PID ${pid}: ${e.message}`);
       }
       // Clean up PID file
-      try { fs.unlinkSync(getPidFile()); } catch (e) { /* ignore */ }
+      try { fs.unlinkSync(getPidFile()); } catch (e) { console.error(`[ensure-daemon] Failed to remove stale PID file: ${e.message}`); }
       return false; // Report as not running so main() will restart it
     }
 
@@ -300,7 +300,7 @@ function ensureStopHookRegistered() {
                 return fullPath;
               }
             }
-          } catch (e) { /* ignore */ }
+          } catch (e) { console.error(`[ensure-daemon] Cannot read hook cache dir ${dir}: ${e.message}`); return null; }
           return null;
         };
         hookPath = findHook(cacheDir);

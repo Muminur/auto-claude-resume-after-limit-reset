@@ -631,17 +631,43 @@ function Uninstall-Plugin {
 
     Write-Host ""
 
-    # Stop any running daemon processes
-    Write-Info "Stopping running daemon processes..."
+    # Gracefully stop the daemon
+    Write-Info "Stopping daemon..."
 
+    if (Test-Path $DAEMON_DEST) {
+        try {
+            $stopOutput = node $DAEMON_DEST stop 2>&1
+            Write-Success "Daemon stopped gracefully"
+        } catch {
+            Write-Info "Daemon was not running or could not be stopped gracefully"
+        }
+    }
+
+    # Force-kill any remaining daemon processes
     try {
         Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {
             $_.CommandLine -like "*auto-resume-daemon.js*" -or
             $_.CommandLine -like "*rate-limit-hook.js*"
-        } | Stop-Process -Force
-        Write-Success "Stopped daemon processes"
+        } | Stop-Process -Force -ErrorAction SilentlyContinue
     } catch {
-        Write-Info "No daemon processes found"
+        # Ignore errors if no processes found
+    }
+
+    Write-Host ""
+
+    # Remove scheduled task if one exists
+    Write-Info "Removing scheduled task (if exists)..."
+
+    try {
+        $task = Get-ScheduledTask -TaskName "ClaudeAutoResume" -ErrorAction SilentlyContinue
+        if ($task) {
+            Unregister-ScheduledTask -TaskName "ClaudeAutoResume" -Confirm:$false
+            Write-Success "Scheduled task removed"
+        } else {
+            Write-Info "No scheduled task found"
+        }
+    } catch {
+        Write-Info "Scheduled task not found or could not be removed: $_"
     }
 
     Write-Host ""

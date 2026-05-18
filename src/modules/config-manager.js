@@ -16,8 +16,48 @@ const DEFAULT_CONFIG = {
   analytics: { enabled: true, retentionDays: 30 },
   watchPaths: [],
   plugins: { enabled: false, directory: '~/.claude/auto-resume/plugins' },
-  daemon: { transcriptPolling: true, maxLogSizeMB: 1 },
-  resume: { postResetDelaySec: 10, maxRetries: 4, verificationWindowSec: 90 }
+  daemon: {
+    transcriptPolling: true,
+    maxLogSizeMB: 1,
+    staleThresholdHours: 2,
+    hookWatchdogThresholdHours: 2
+  },
+  resume: {
+    postResetDelaySec: 10,
+    maxRetries: 4,
+    verificationWindowSec: 90,
+    activeVerificationTimeoutMs: 15000,
+    activeVerificationPollMs: 1000
+  },
+  metrics: { enabled: false, port: 9199 },
+  patterns: {
+    rateLimitPatterns: [
+      "You've hit your limit",
+      "You're out of extra usage",
+      "out of extra usage",
+      "out of.*usage.*resets",
+      "You['’]ve hit your org['’]s monthly usage limit",
+      "exceeded your current quota",
+      "Rate limit exceeded",
+      "\"type\"\\s*:\\s*\"rate_limit_error\"",
+      "try again in\\s+(\\d+)\\s*(minutes?|hours?|seconds?)",
+      "resets\\s+(\\d+)(?::(\\d+))?(am|pm)\\s*\\(([^)]+)\\)",
+      "too many requests",
+      "usage limit"
+    ],
+    falsePositivePatterns: [
+      "remove.*rate.*limit",
+      "rate.*limit.*hook",
+      "rate.*limit.*detection",
+      "false.*alarm",
+      "stale.*rate",
+      "fix.*rate.*limit",
+      "rate_limit_hook",
+      "RATE_LIMIT_PATTERNS",
+      "isRateLimitMessage"
+    ]
+  },
+  projectOverrides: {}
 };
 
 /**
@@ -68,7 +108,9 @@ const CONFIG_SCHEMA = {
     type: 'object',
     properties: {
       transcriptPolling: { type: 'boolean', required: true },
-      maxLogSizeMB: { type: 'number', min: 1, max: 100, required: true }
+      maxLogSizeMB: { type: 'number', min: 1, max: 100, required: true },
+      staleThresholdHours: { type: 'number', min: 1, max: 48, required: false },
+      hookWatchdogThresholdHours: { type: 'number', min: 1, max: 48, required: false }
     }
   },
   resume: {
@@ -76,9 +118,26 @@ const CONFIG_SCHEMA = {
     properties: {
       postResetDelaySec: { type: 'number', min: 1, max: 300, required: true },
       maxRetries: { type: 'number', min: 0, max: 10, required: true },
-      verificationWindowSec: { type: 'number', min: 10, max: 600, required: true }
+      verificationWindowSec: { type: 'number', min: 10, max: 600, required: true },
+      activeVerificationTimeoutMs: { type: 'number', min: 1000, max: 60000, required: false },
+      activeVerificationPollMs: { type: 'number', min: 100, max: 10000, required: false }
     }
-  }
+  },
+  metrics: {
+    type: 'object',
+    properties: {
+      enabled: { type: 'boolean', required: true },
+      port: { type: 'number', min: 1024, max: 65535, required: true }
+    }
+  },
+  patterns: {
+    type: 'object',
+    properties: {
+      rateLimitPatterns: { type: 'array', required: true },
+      falsePositivePatterns: { type: 'array', required: true }
+    }
+  },
+  projectOverrides: { type: 'object', required: false }
 };
 
 /**
@@ -361,6 +420,47 @@ function resetConfig() {
   return config;
 }
 
+/**
+ * Gets the resume prompt for a specific project path, falling back to global default.
+ * Users can set per-project overrides in config.projectOverrides keyed by project path.
+ * @param {string} [projectPath] - Absolute path of the project
+ * @returns {string} Resume prompt text
+ */
+function getResumePromptForProject(projectPath) {
+  const config = getConfig();
+  if (projectPath && config.projectOverrides) {
+    const normalized = projectPath.replace(/\\/g, '/');
+    for (const [key, overrides] of Object.entries(config.projectOverrides)) {
+      const normalizedKey = key.replace(/\\/g, '/');
+      if (normalized === normalizedKey || normalized.startsWith(normalizedKey + '/')) {
+        if (overrides && overrides.resumePrompt) {
+          return overrides.resumePrompt;
+        }
+      }
+    }
+  }
+  return config.resumePrompt || DEFAULT_CONFIG.resumePrompt;
+}
+
+/**
+ * Gets compiled rate limit patterns from config, falling back to hardcoded defaults.
+ * @returns {{ rateLimitPatterns: RegExp[], falsePositivePatterns: RegExp[] }}
+ */
+function getCompiledPatterns() {
+  const config = getConfig();
+  const patternsConfig = config.patterns || DEFAULT_CONFIG.patterns;
+
+  const compile = (arr) => arr.map(p => {
+    try { return new RegExp(p, 'i'); }
+    catch { return null; }
+  }).filter(Boolean);
+
+  return {
+    rateLimitPatterns: compile(patternsConfig.rateLimitPatterns),
+    falsePositivePatterns: compile(patternsConfig.falsePositivePatterns)
+  };
+}
+
 module.exports = {
   loadConfig,
   saveConfig,
@@ -369,5 +469,7 @@ module.exports = {
   resetConfig,
   getConfigPath,
   getConfigDir,
+  getResumePromptForProject,
+  getCompiledPatterns,
   DEFAULT_CONFIG
 };

@@ -89,16 +89,18 @@ function main() {
   console.log(`  Updated: ${MARKETPLACE_JSON}`);
 
   // Update VERSION constant in auto-resume-daemon.js
-  const daemonSrc = fs.readFileSync(DAEMON_JS, 'utf8');
-  const updatedDaemon = daemonSrc.replace(
-    /^const VERSION = '[^']+';/m,
-    `const VERSION = '${newVersion}';`
-  );
-  if (updatedDaemon === daemonSrc) {
-    console.warn('  Warning: VERSION constant not found in auto-resume-daemon.js — update manually');
-  } else {
-    fs.writeFileSync(DAEMON_JS, updatedDaemon, 'utf8');
-    console.log(`  Updated VERSION constant in: auto-resume-daemon.js`);
+  if (fs.existsSync(DAEMON_JS)) {
+    const daemonSrc = fs.readFileSync(DAEMON_JS, 'utf8');
+    const updatedDaemon = daemonSrc.replace(
+      /^const VERSION = '[^']+';/m,
+      `const VERSION = '${newVersion}';`
+    );
+    if (updatedDaemon === daemonSrc) {
+      console.warn('  Warning: VERSION constant not found in auto-resume-daemon.js — update manually');
+    } else {
+      fs.writeFileSync(DAEMON_JS, updatedDaemon, 'utf8');
+      console.log(`  Updated VERSION constant in: auto-resume-daemon.js`);
+    }
   }
 
   console.log(`\nVersion bumped to ${newVersion}`);

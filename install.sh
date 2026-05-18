@@ -630,35 +630,36 @@ create_launchd_service() {
     local LAUNCHD_DIR="${HOME}/Library/LaunchAgents"
     mkdir -p "$LAUNCHD_DIR"
 
-    cat > "$LAUNCHD_PLIST_FILE" <<EOF
+    local NODE_PATH
+    NODE_PATH=$(which node)
+    local LOG_PATH="${AUTO_RESUME_DIR}/daemon.log"
+
+    cat > "$LAUNCHD_PLIST_FILE" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>${LAUNCHD_PLIST_NAME}</string>
-
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/node</string>
+        <string>${NODE_PATH}</string>
         <string>${DAEMON_DEST}</string>
-        <string>--monitor</string>
+        <string>monitor</string>
     </array>
-
     <key>RunAtLoad</key>
     <true/>
-
     <key>KeepAlive</key>
     <true/>
-
     <key>StandardOutPath</key>
-    <string>${AUTO_RESUME_DIR}/daemon.log</string>
-
+    <string>${LOG_PATH}</string>
     <key>StandardErrorPath</key>
-    <string>${AUTO_RESUME_DIR}/daemon.error.log</string>
+    <string>${LOG_PATH}</string>
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
 </dict>
 </plist>
-EOF
+PLIST
 
     log_success "Launchd plist created: $LAUNCHD_PLIST_FILE"
 
@@ -672,6 +673,15 @@ EOF
     echo "  launchctl start $LAUNCHD_PLIST_NAME"
     log_info "To check service status:"
     echo "  launchctl list | grep claude-auto-resume"
+}
+
+uninstall_launchd() {
+    if [[ -f "$LAUNCHD_PLIST_FILE" ]]; then
+        log_step "Removing launchd service..."
+        launchctl unload "$LAUNCHD_PLIST_FILE" 2>/dev/null || true
+        rm -f "$LAUNCHD_PLIST_FILE"
+        log_success "LaunchAgent removed"
+    fi
 }
 
 install() {
@@ -762,12 +772,7 @@ uninstall() {
             log_success "Systemd service removed"
         fi
     elif [[ "$PLATFORM" == "macos" ]]; then
-        if [[ -f "$LAUNCHD_PLIST_FILE" ]]; then
-            log_step "Stopping and removing launchd service..."
-            launchctl unload "$LAUNCHD_PLIST_FILE" 2>/dev/null || true
-            rm -f "$LAUNCHD_PLIST_FILE"
-            log_success "Launchd service removed"
-        fi
+        uninstall_launchd
     fi
 
     # Remove files

@@ -50,7 +50,7 @@ function createStatusFileWatcher(filePath, onChange, options = {}) {
     fsWatcher.on('error', () => {
       // If fs.watch errors after creation, switch to polling
       if (fsWatcher) {
-        try { fsWatcher.close(); } catch (e) { /* ignore */ }
+        try { fsWatcher.close(); } catch (e) { /* fsWatcher.close() threw during error recovery — ignoring to avoid double-fault */ }
         fsWatcher = null;
       }
       if (!pollHandle) {
@@ -84,7 +84,8 @@ function createStatusFileWatcher(filePath, onChange, options = {}) {
         }
         lastMtime = stats.mtimeMs;
       } catch (e) {
-        // Ignore transient read errors
+        // Transient read error (e.g. file deleted mid-poll)
+        console.error(`[status-file-watcher] Poll read error for ${filePath}: ${e.message}`);
       }
     }, pollInterval);
   }

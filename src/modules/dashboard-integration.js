@@ -13,7 +13,7 @@
  * @module DashboardIntegration
  */
 
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const { EventEmitter } = require('events');
 const HttpServer = require('./http-server');
 const WebSocketServer = require('./websocket-server');
@@ -207,10 +207,10 @@ class DashboardIntegration extends EventEmitter {
     const url = `http://localhost:${guiPort}?wsPort=${wsPort}`;
 
     // Open browser based on platform
-    const cmd = this._getOpenCommand(url);
+    const { binary, args } = this._getOpenCommand(url);
 
     return new Promise((resolve, reject) => {
-      exec(cmd, (error) => {
+      execFile(binary, args, (error) => {
         if (error) {
           this._log('error', `Failed to open browser: ${error.message}`);
           reject(error);
@@ -256,19 +256,20 @@ class DashboardIntegration extends EventEmitter {
   }
 
   /**
-   * Get platform-specific command to open URL
+   * Get platform-specific binary and arguments to open a URL
    * @private
    * @param {string} url - URL to open
-   * @returns {string} Command string
+   * @returns {{ binary: string, args: string[] }} Binary and argument array
    */
   _getOpenCommand(url) {
     switch (process.platform) {
       case 'darwin':
-        return `open "${url}"`;
+        return { binary: 'open', args: [url] };
       case 'win32':
-        return `start "" "${url}"`;
+        // 'start' is a cmd.exe builtin; use cmd /c start with an empty title arg
+        return { binary: 'cmd', args: ['/c', 'start', '', url] };
       default:
-        return `xdg-open "${url}"`;
+        return { binary: 'xdg-open', args: [url] };
     }
   }
 

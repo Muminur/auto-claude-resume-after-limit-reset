@@ -251,7 +251,8 @@ async function findClaudeTargetPanes(claudePid) {
         return [{ target: sessionName, pid: claudePid, command: 'claude' }];
       }
     } catch (_err) {
-      // Fall through to broad scan
+      // Targeted pane detection failed — fall through to broad scan
+      console.error(`[tmux-delivery] Targeted pane detection failed for PID ${claudePid}: ${_err.message}`);
     }
   }
   // No specific PID or pane not found — scan all Claude panes

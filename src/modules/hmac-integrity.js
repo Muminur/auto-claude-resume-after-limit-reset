@@ -29,8 +29,9 @@ function getOrCreateSecret() {
     if (fs.existsSync(secretPath)) {
       return fs.readFileSync(secretPath, 'utf8').trim();
     }
-  } catch {
-    // Fall through to create new
+  } catch (e) {
+    // Failed to read existing secret — fall through to create new
+    console.error(`[hmac-integrity] Failed to read existing secret, regenerating: ${e.message}`);
   }
 
   const secret = crypto.randomBytes(32).toString('hex');
@@ -43,10 +44,11 @@ function getOrCreateSecret() {
     fs.writeFileSync(secretPath, secret, { mode: 0o600 });
     // On Unix, also try chmod explicitly
     if (process.platform !== 'win32') {
-      try { fs.chmodSync(secretPath, 0o600); } catch { /* ignore */ }
+      try { fs.chmodSync(secretPath, 0o600); } catch (e) { /* chmod failed — secret still usable but permissions may be loose */ }
     }
-  } catch {
-    // If we can't persist, still return for this session
+  } catch (e) {
+    // If we can't persist the secret, still return for this session
+    console.error(`[hmac-integrity] Failed to persist HMAC secret: ${e.message}`);
   }
 
   return secret;

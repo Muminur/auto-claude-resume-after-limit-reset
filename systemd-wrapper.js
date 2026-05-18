@@ -23,7 +23,7 @@ process.on('unhandledRejection', (reason) => {
   const msg = `[${new Date().toISOString()}] UNHANDLED_REJECTION: ${reason}\n`;
   try {
     fs.appendFileSync(path.join(__dirname, 'daemon.log'), msg);
-  } catch (e) { /* ignore */ }
+  } catch (e) { /* fs.appendFileSync failed in unhandledRejection handler — cannot log further */ }
 });
 
 // Load and run the daemon

@@ -47,7 +47,7 @@ function createConfigWatcher(configPath, onReload, options = {}) {
     fsWatcher.on('error', () => {
       // Switch to polling on error
       if (fsWatcher) {
-        try { fsWatcher.close(); } catch (e) { /* ignore */ }
+        try { fsWatcher.close(); } catch (e) { /* fsWatcher.close() threw during error recovery — ignoring to avoid double-fault */ }
         fsWatcher = null;
       }
       if (!pollHandle) startPolling();
@@ -75,8 +75,9 @@ function createConfigWatcher(configPath, onReload, options = {}) {
           reloadConfig();
         }
         lastMtime = stats.mtimeMs;
-      } catch {
-        // Ignore transient errors
+      } catch (e) {
+        // Transient read error (file deleted mid-poll, etc.)
+        console.error(`[config-hot-reload] Poll read error for ${configPath}: ${e.message}`);
       }
     }, pollInterval);
   }

@@ -32,7 +32,8 @@ let statusLineProvider = null;
 try {
   statusLineProvider = require('./statusline-provider');
 } catch (e) {
-  // Module not available
+  // Module not available — status line endpoint will be skipped
+  console.error(`[api-server] statusline-provider not available: ${e.message}`);
 }
 
 /**

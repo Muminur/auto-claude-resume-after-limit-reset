@@ -15,6 +15,9 @@ jest.mock('child_process', () => ({
   exec: jest.fn((cmd, callback) => {
     if (callback) callback(null, '', '');
   }),
+  execFile: jest.fn((binary, args, callback) => {
+    if (callback) callback(null, '', '');
+  }),
   execSync: jest.fn()
 }));
 
@@ -355,9 +358,9 @@ describe('DashboardIntegration', () => {
     it('should open browser with localhost URL', async () => {
       await dashboard.openGui();
 
-      expect(childProcess.exec).toHaveBeenCalled();
-      const callArg = childProcess.exec.mock.calls[0][0];
-      expect(callArg).toContain('localhost:3737');
+      expect(childProcess.execFile).toHaveBeenCalled();
+      const callArgs = childProcess.execFile.mock.calls[0][1];
+      expect(callArgs.some(a => a.includes('localhost:3737'))).toBe(true);
     });
 
     it('should use configured GUI port', async () => {
@@ -368,8 +371,8 @@ describe('DashboardIntegration', () => {
 
       await dashboard.openGui();
 
-      const callArg = childProcess.exec.mock.calls[0][0];
-      expect(callArg).toContain('8080');
+      const callArgs = childProcess.execFile.mock.calls[0][1];
+      expect(callArgs.some(a => a.includes('8080'))).toBe(true);
     });
 
     it('should not restart server if already running', async () => {
@@ -385,8 +388,8 @@ describe('DashboardIntegration', () => {
     it('should include wsPort query parameter in URL', async () => {
       await dashboard.openGui();
 
-      const callArg = childProcess.exec.mock.calls[0][0];
-      expect(callArg).toContain('wsPort=3847');
+      const callArgs = childProcess.execFile.mock.calls[0][1];
+      expect(callArgs.some(a => a.includes('wsPort=3847'))).toBe(true);
     });
   });
 

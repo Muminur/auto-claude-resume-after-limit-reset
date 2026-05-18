@@ -178,6 +178,8 @@ node ~/.claude/auto-resume/auto-resume-daemon.js test       # Test with 10s coun
 node ~/.claude/auto-resume/auto-resume-daemon.js logs       # View daemon logs
 node ~/.claude/auto-resume/auto-resume-daemon.js analytics  # View rate limit stats
 node ~/.claude/auto-resume/auto-resume-daemon.js reset      # Clear rate limit status
+node ~/.claude/auto-resume/auto-resume-daemon.js health     # Full system health check
+node ~/.claude/auto-resume/auto-resume-daemon.js dry-run    # Monitor without sending keystrokes
 ```
 
 ### Systemd Service (Linux)
@@ -425,6 +427,111 @@ cd auto-claude-resume-after-limit-reset && git pull && ./install.sh
 - **Atomic Writes** — All `status.json` writers use tmp-file-then-rename to prevent corruption from concurrent access.
 - **Path Traversal Guard** — Transcript scanner validates `realpathSync` to prevent symlink escape from `~/.claude/projects/`.
 - **O_NOCTTY Flag** — PTY writes use `O_NOCTTY` so the daemon never acquires a controlling terminal.
+
+## API Reference
+
+The daemon exposes a REST API on port **3848** (default) when running.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Health check |
+| GET | `/api/status` | All sessions status |
+| GET | `/api/status/:session` | Single session status |
+| GET | `/api/config` | Current configuration (sanitized) |
+| POST | `/api/resume/:session` | Force resume a session |
+| GET | `/api/analytics` | Analytics data |
+
+### Example curl commands
+
+```bash
+# Health check
+curl http://localhost:3848/api/health
+
+# All sessions
+curl http://localhost:3848/api/status
+
+# Single session
+curl http://localhost:3848/api/status/default
+
+# Current configuration
+curl http://localhost:3848/api/config
+
+# Force resume a session
+curl -X POST http://localhost:3848/api/resume/default
+
+# Analytics
+curl http://localhost:3848/api/analytics
+```
+
+Optional API key authentication via `Authorization: Bearer <key>` or `X-API-Key: <key>` headers.
+
+## WebSocket Events
+
+The daemon broadcasts real-time events over WebSocket on port **3847** (default).
+
+**Connection:** `ws://localhost:3847`
+
+### Inbound message types (client → server)
+
+| Type | Description | Example payload |
+|------|-------------|-----------------|
+| `status` | Request current session status | `{"type":"status"}` |
+| `config` | Request current configuration | `{"type":"config"}` |
+| `analytics` | Request analytics data | `{"type":"analytics"}` |
+| `resume` | Trigger resume for a session | `{"type":"resume","session_id":"default"}` |
+| `clear` | Clear session status | `{"type":"clear","session_id":"default"}` |
+| `reset_status` | Reset all status | `{"type":"reset_status"}` |
+| `config_update` | Update configuration | `{"type":"config_update","config":{"resumePrompt":"continue"}}` |
+| `get_logs` | Fetch recent log lines | `{"type":"get_logs"}` |
+| `subscribe` | Subscribe to specific sessions | `{"type":"subscribe","data":{"sessions":["default"]}}` |
+
+### Outbound message types (server → client)
+
+| Type | Description |
+|------|-------------|
+| `welcome` | Sent on connect with `clientId` |
+| `status` | Session status array with daemon stats |
+| `event` | Application events (rate limit detected, resumed, etc.) |
+| `config` | Configuration object |
+| `analytics` | Analytics chart data |
+| `logs` | Recent log lines array |
+| `action_response` | Acknowledgment for resume/clear/reset/config_update |
+| `subscribed` | Confirmation of session subscription |
+
+### Quick connect example
+
+```js
+const ws = new WebSocket('ws://localhost:3847');
+ws.onopen = () => ws.send(JSON.stringify({ type: 'status' }));
+ws.onmessage = (e) => console.log(JSON.parse(e.data));
+```
+
+### Health Check command
+
+Runs a full-chain health check without starting the daemon:
+
+```bash
+node auto-resume-daemon.js health
+```
+
+Reports:
+- Stop hook presence in `~/.claude/settings.json`
+- Daemon running status and PID
+- Heartbeat freshness (seconds since last daemon heartbeat)
+- Status directory writability
+- HMAC verification module availability
+- Active delivery tier (tmux / PTY / WezTerm / PowerShell)
+- Loaded optional modules (config, analytics, notifications, dashboard, hmac)
+
+### Dry-Run mode
+
+Start the daemon in monitoring mode without sending any keystrokes. Useful for verifying detection logic before going live:
+
+```bash
+node auto-resume-daemon.js dry-run
+```
+
+Rate limits are detected and logged normally. All delivery calls are skipped and replaced with log lines indicating what would have been sent.
 
 ## Dependencies
 
