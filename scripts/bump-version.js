@@ -16,6 +16,7 @@ const path = require('path');
 
 const PLUGIN_JSON = path.join(__dirname, '..', '.claude-plugin', 'plugin.json');
 const MARKETPLACE_JSON = path.join(__dirname, '..', '.claude-plugin', 'marketplace.json');
+const DAEMON_JS = path.join(__dirname, '..', 'auto-resume-daemon.js');
 
 function bumpVersion(version, type = 'patch') {
   const parts = version.split('.').map(Number);
@@ -86,6 +87,19 @@ function main() {
   marketplaceJson.plugins[0].version = newVersion;
   fs.writeFileSync(MARKETPLACE_JSON, JSON.stringify(marketplaceJson, null, 2) + '\n');
   console.log(`  Updated: ${MARKETPLACE_JSON}`);
+
+  // Update VERSION constant in auto-resume-daemon.js
+  const daemonSrc = fs.readFileSync(DAEMON_JS, 'utf8');
+  const updatedDaemon = daemonSrc.replace(
+    /^const VERSION = '[^']+';/m,
+    `const VERSION = '${newVersion}';`
+  );
+  if (updatedDaemon === daemonSrc) {
+    console.warn('  Warning: VERSION constant not found in auto-resume-daemon.js — update manually');
+  } else {
+    fs.writeFileSync(DAEMON_JS, updatedDaemon, 'utf8');
+    console.log(`  Updated VERSION constant in: auto-resume-daemon.js`);
+  }
 
   console.log(`\nVersion bumped to ${newVersion}`);
 

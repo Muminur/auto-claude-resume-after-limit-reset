@@ -17,7 +17,7 @@ function findWeztermExe() {
   for (const c of candidates) {
     try {
       if (fs.existsSync(c)) return c;
-    } catch (_) {}
+    } catch (_) { /* fs.existsSync threw — candidate inaccessible, continue */ }
   }
   return null;
 }
@@ -43,7 +43,7 @@ async function tryWeztermCli(resumeText, log) {
         });
       });
       if (which && fs.existsSync(which)) weztermExe = which;
-    } catch (_) {}
+    } catch (_) { log('debug', 'Failed to locate wezterm via PATH lookup'); }
   }
 
   if (!weztermExe) {
@@ -98,7 +98,7 @@ async function tryWeztermCli(resumeText, log) {
         }`);
       }
     }
-  } catch (_) {}
+  } catch (_) { log('debug', `Failed to enumerate WezTerm panes, falling back to active pane: ${_ && _.message || _}`); }
 
   let anySuccess = false;
   for (const target of targets) {
@@ -456,7 +456,7 @@ async function tryWindowsTerminalMultiTab(resumeText, log) {
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tempScript],
       { timeout: 60000 },
       (error, stdout, stderr) => {
-        try { fs.unlinkSync(tempScript); } catch (_) {}
+        try { fs.unlinkSync(tempScript); } catch (_) { log('debug', `Failed to remove temp script ${tempScript}: ${_ && _.message || _}`); }
 
         if (error) {
           // exit 2 = no WindowsTerminal process found — fall through quietly
@@ -499,7 +499,7 @@ async function tryPowerShellKeystroke(resumeText, log) {
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tempScript],
       { timeout: 15000 },
       (error, stdout, stderr) => {
-        try { fs.unlinkSync(tempScript); } catch (_) {}
+        try { fs.unlinkSync(tempScript); } catch (_) { log('debug', `Failed to remove temp script ${tempScript}: ${_ && _.message || _}`); }
 
         if (error) {
           log('warning', `PowerShell keystroke delivery failed: ${error.message}`);
@@ -525,30 +525,40 @@ async function tryPowerShellKeystroke(resumeText, log) {
  * @param {Object} opts
  * @param {string} [opts.resumeText='continue']
  * @param {Function} [opts.log]
+ * @param {string[]} [opts.skipTiers=[]] - Tier names to skip (e.g. on retry escalation)
  * @returns {Promise<{success: boolean, method: string|null, error: string|null}>}
  */
 async function deliverResumeWindows(opts = {}) {
   const resumeText = opts.resumeText || 'continue';
   const log = opts.log || (() => {});
+  const skipTiers = opts.skipTiers || [];
 
   let anySuccess = false;
   const methods = [];
 
   // Strategy 1: WezTerm CLI — always run; handles WezTerm panes independently of WT.
   // Rate limits are account-level so all terminal types need the resume signal.
-  try {
-    const ok = await tryWeztermCli(resumeText, log);
-    if (ok) { anySuccess = true; methods.push('wezterm-cli'); }
-  } catch (err) {
-    log('debug', `WezTerm CLI error: ${err.message}`);
+  if (!skipTiers.includes('wezterm-cli')) {
+    try {
+      const ok = await tryWeztermCli(resumeText, log);
+      if (ok) { anySuccess = true; methods.push('wezterm-cli'); }
+    } catch (err) {
+      log('debug', `WezTerm CLI error: ${err.message}`);
+    }
+  } else {
+    log('debug', 'Skipping WezTerm CLI (tier escalation)');
   }
 
   // Strategy 2: Windows Terminal multi-tab — always run independently of WezTerm.
-  try {
-    const ok = await tryWindowsTerminalMultiTab(resumeText, log);
-    if (ok) { anySuccess = true; methods.push('wt-multi-tab'); }
-  } catch (err) {
-    log('debug', `WT multi-tab error: ${err.message}`);
+  if (!skipTiers.includes('wt-multi-tab')) {
+    try {
+      const ok = await tryWindowsTerminalMultiTab(resumeText, log);
+      if (ok) { anySuccess = true; methods.push('wt-multi-tab'); }
+    } catch (err) {
+      log('debug', `WT multi-tab error: ${err.message}`);
+    }
+  } else {
+    log('debug', 'Skipping Windows Terminal multi-tab (tier escalation)');
   }
 
   // Strategy 3: PowerShell keystroke fallback — only when neither terminal-specific

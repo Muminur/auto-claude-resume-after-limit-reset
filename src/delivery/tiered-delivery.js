@@ -20,6 +20,7 @@ const TIER = {
  * @param {string} [opts.menuSelection='1'] - Menu option key to press
  * @param {Function} [opts.log] - Logging function(level, message)
  * @param {Function} [opts.xdotoolFallback] - Fallback when no processes found/delivered
+ * @param {string[]} [opts.skipTiers=[]] - Tier names to skip (for escalation on retry)
  * @param {Function} [opts._discoverer] - Override discovery function (for testing)
  * @returns {Promise<{success: boolean, tiersAttempted: string[], targets: Array, error: string|null}>}
  */
@@ -29,13 +30,14 @@ async function deliverResume(opts = {}) {
     menuSelection = '1',
     log = () => {},
     xdotoolFallback = null,
+    skipTiers = [],
     _discoverer = discoverAllClaudeProcesses,
   } = opts;
 
   // Windows: use dedicated Windows delivery (WezTerm CLI → PowerShell window targeting)
   if (os.platform() === 'win32') {
     const tiersAttempted = [TIER.WINDOWS];
-    const result = await deliverResumeWindows({ resumeText, log });
+    const result = await deliverResumeWindows({ resumeText, log, skipTiers });
     return {
       success: result.success,
       tiersAttempted,
