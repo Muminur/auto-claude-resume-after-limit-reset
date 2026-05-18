@@ -3,6 +3,11 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 
+let hmacIntegrity = null;
+try {
+  hmacIntegrity = require('./hmac-integrity');
+} catch {}
+
 const BASE_DIR = path.join(os.homedir(), '.claude', 'auto-resume');
 const STATUS_FILE = path.join(BASE_DIR, 'status.json');
 const HEARTBEAT_FILE = path.join(BASE_DIR, 'heartbeat.json');
@@ -104,9 +109,23 @@ class MetricsServer {
       if (fs.existsSync(STATUS_FILE)) {
         const status = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
         if (status.detected) {
-          isRateLimited = 1;
-          const resetTime = new Date(status.reset_time);
-          resetTimeRemaining = Math.max(0, Math.floor((resetTime - now) / 1000));
+          // Verify HMAC if available
+          if (hmacIntegrity && status._hmac) {
+            const { valid } = hmacIntegrity.verifyStatus(status);
+            if (!valid) {
+              // Tampered status — report as not rate limited
+              isRateLimited = 0;
+              resetTimeRemaining = 0;
+            } else {
+              isRateLimited = 1;
+              const resetTime = new Date(status.reset_time);
+              resetTimeRemaining = Math.max(0, Math.floor((resetTime - now) / 1000));
+            }
+          } else {
+            isRateLimited = 1;
+            const resetTime = new Date(status.reset_time);
+            resetTimeRemaining = Math.max(0, Math.floor((resetTime - now) / 1000));
+          }
         }
       }
     } catch {}

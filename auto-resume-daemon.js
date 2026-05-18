@@ -20,7 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 
 // New tiered delivery modules
 const { deliverResume } = require('./src/delivery/tiered-delivery');
@@ -73,7 +73,7 @@ try {
 
 let metricsServer = null;
 
-const VERSION = '1.16.0';
+const VERSION = '1.16.1';
 const HOME_DIR = os.homedir();
 const BASE_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
 const STATUS_FILE = path.join(BASE_DIR, 'status.json');
@@ -232,16 +232,29 @@ function removePidFile() {
  */
 function writeLockFile() {
   try {
-    const tmpFile = LOCK_FILE + '.tmp';
-    fs.writeFileSync(tmpFile, JSON.stringify({
+    const fd = fs.openSync(LOCK_FILE, 'wx');
+    fs.writeSync(fd, JSON.stringify({
       pid: process.pid,
       started_at: new Date().toISOString(),
-    }), 'utf8');
-    fs.renameSync(tmpFile, LOCK_FILE);
+    }));
+    fs.closeSync(fd);
     log('debug', `Lock file written: ${LOCK_FILE} (PID: ${process.pid})`);
   } catch (err) {
+    if (err.code === 'EEXIST') {
+      // Lock already exists — check if holder is alive
+      const existing = readLockFile();
+      if (existing && isProcessRunning(existing.pid)) {
+        log('warning', `Lock held by PID ${existing.pid} — cannot acquire`);
+        return false;
+      }
+      // Dead lock holder — force overwrite
+      try { fs.unlinkSync(LOCK_FILE); } catch (e) { /* ignore */ }
+      return writeLockFile(); // Retry once
+    }
     log('error', `Failed to write lock file: ${err.message}`);
+    return false;
   }
+  return true;
 }
 
 /**
@@ -525,7 +538,8 @@ function sendContinueViaXdotool(claudePid) {
       log('debug', `Using ${useYdotool ? 'ydotool' : 'xdotool'} at: ${tool}`);
 
       // Write shell script to temp file to avoid exec escaping/buffer issues
-      const tempScript = path.join(os.tmpdir(), `claude-auto-resume-send-${process.pid}.sh`);
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-auto-resume-'));
+      const tempScript = path.join(tempDir, 'send.sh');
       const scriptLines = [
         '#!/bin/sh',
         'set +e',
@@ -685,11 +699,11 @@ function sendContinueViaXdotool(claudePid) {
         'exit 0',
       );
 
-      fs.writeFileSync(tempScript, scriptLines.join('\n'), { mode: 0o755 });
+      fs.writeFileSync(tempScript, scriptLines.join('\n'), { mode: 0o700, flag: 'wx' });
 
-      exec(`/bin/sh "${tempScript}"`, { timeout: 30000 }, (err, stdout, stderr) => {
-        // Clean up temp file
-        try { fs.unlinkSync(tempScript); } catch (e) { log('debug', `Failed to remove temp script ${tempScript}: ${e.message}`); }
+      execFile('/bin/sh', [tempScript], { timeout: 30000 }, (err, stdout, stderr) => {
+        // Clean up temp file and directory
+        try { fs.unlinkSync(tempScript); fs.rmdirSync(tempDir); } catch (e) { log('debug', `Failed to remove temp script ${tempScript}: ${e.message}`); }
 
         if (err) {
           log('error', `Failed to send keystrokes: ${err.message}`);
@@ -1616,7 +1630,24 @@ function startDaemon() {
   ensureDirectories();
 
   // Write lockfile before PID file so we claim ownership early
-  writeLockFile();
+  if (!writeLockFile()) {
+    try {
+      const ageMs = Date.now() - fs.statSync(LOCK_FILE).mtimeMs;
+      if (ageMs > 5 * 60 * 1000) {
+        fs.unlinkSync(LOCK_FILE);
+        if (!writeLockFile()) {
+          log('error', 'Lock acquisition failed after stale lock removal');
+          process.exit(1);
+        }
+      } else {
+        log('error', 'Daemon already running — lock held by live process');
+        process.exit(1);
+      }
+    } catch (e) {
+      log('error', `Lock check failed: ${e.message}`);
+      process.exit(1);
+    }
+  }
 
   // Write PID file
   writePidFile();
@@ -2235,19 +2266,23 @@ async function openGui() {
   // Open HTTP URL instead of file (server should be running via daemon)
   const guiUrl = 'http://localhost:3737';
   const platform = os.platform();
-  let command;
-
-  if (platform === 'win32') {
-    command = `start "" "${guiUrl}"`;
-  } else if (platform === 'darwin') {
-    command = `open "${guiUrl}"`;
-  } else {
-    command = `xdg-open "${guiUrl}"`;
-  }
 
   log('info', `Opening GUI dashboard: ${guiUrl}`);
 
-  exec(command, (error) => {
+  const { execFile: guiExecFile } = require('child_process');
+  let binary, args;
+  if (platform === 'win32') {
+    binary = 'cmd';
+    args = ['/c', 'start', '""', guiUrl];
+  } else if (platform === 'darwin') {
+    binary = 'open';
+    args = [guiUrl];
+  } else {
+    binary = 'xdg-open';
+    args = [guiUrl];
+  }
+
+  guiExecFile(binary, args, (error) => {
     if (error) {
       log('error', `Failed to open GUI: ${error.message}`);
       log('info', `You can manually open: ${guiUrl}`);

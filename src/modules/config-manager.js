@@ -451,7 +451,12 @@ function getCompiledPatterns() {
   const patternsConfig = config.patterns || DEFAULT_CONFIG.patterns;
 
   const compile = (arr) => arr.map(p => {
-    try { return new RegExp(p, 'i'); }
+    try {
+      if (typeof p !== 'string' || p.length > 200) return null;
+      // Reject patterns with nested quantifiers that could cause catastrophic backtracking
+      if (/(\+|\*|\{)\s*\)(\+|\*|\{|\?)/.test(p)) return null;
+      return new RegExp(p, 'i');
+    }
     catch { return null; }
   }).filter(Boolean);
 
