@@ -363,16 +363,43 @@ Time Reset+15s: Cleanup
 │ Back to watching state
 ```
 
+### 10. Daemon Health & Safety
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Self-Watchdog  (runs every 60s)                         │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  Check 1: Watch interval alive                           │
+│  Check 2: Base directory writable                        │
+│  Check 3: Memory < 200MB (exits for restart if exceeded) │
+│  Check 4: Hook heartbeat freshness (warns if stale)      │
+│  Check 5: Version mismatch (every 5th cycle = ~5 min)    │
+│                                                          │
+│  Multi-Instance Guard:                                   │
+│  ├── daemon.lock created with O_EXCL (atomic)            │
+│  ├── Dead holder detected → force-remove + take over     │
+│  └── Stale mtime > 5 min → force-remove + retry          │
+│                                                          │
+│  Metrics (optional, port 9199):                          │
+│  └── Prometheus endpoint with counters & gauges          │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
 ## Security Model
 
 | Attack Vector | Risk | Mitigation |
 |---------------|------|------------|
-| Status file tampering | Medium | File permissions (600), format validation |
+| Status file tampering | Medium | HMAC-SHA256 verification, atomic writes |
 | Keystroke injection | Medium | Fixed prompt text, no user input in keys |
-| PID file race | Low | Atomic operations, process existence check |
+| Temp file symlink | Medium | mkdtempSync + O_EXCL (wx flag), private directory |
+| Shell injection | Low | All exec() replaced with execFile() + arg arrays |
+| PID file race | Low | O_EXCL lockfile, mtime-based stale detection |
+| ReDoS via config patterns | Low | Pattern length cap (200), nested quantifier rejection |
 | Log file disclosure | Low | Restrictive permissions, no secrets logged |
 | Privilege escalation | None | Runs as user, no elevated operations |
-| Network attack | None | No network connections (purely local) |
+| Network attack | Low | Metrics/API/WebSocket bind to 127.0.0.1 only |
 
 ## Performance
 

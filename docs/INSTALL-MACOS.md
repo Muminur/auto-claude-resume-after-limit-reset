@@ -75,7 +75,7 @@ The installer registers a **SessionStart hook** that:
 2. Checks if the daemon is already running
 3. Starts the daemon in the background if it's not running
 
-You don't need to configure launchd or any auto-start mechanism manually!
+The installer also creates a LaunchAgent plist (`~/Library/LaunchAgents/com.claude.auto-resume.plist`) so the daemon starts automatically on login, independent of Claude Code sessions.
 
 ## Configuration and Setup
 

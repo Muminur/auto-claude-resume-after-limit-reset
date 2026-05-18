@@ -69,6 +69,16 @@ Claude Code resumes automatically
 - **Path Traversal Guard** — Transcript scanner validates real paths to prevent symlink-based directory escape
 - **Org Monthly Limit Detection** — Detects "You've hit your org's monthly usage limit" message
 - **Hook Module Exports** — `rate-limit-hook.js` exports `analyzeTranscriptTail`, `parseResetTime`, and `isRealRateLimit` so the daemon can import them directly without spawning a subprocess
+- **Hook Execution Watchdog** — Daemon warns if the Stop hook hasn't fired in 2+ hours while Claude processes are running, catching silent hook deregistration
+- **Multi-Instance Lock Guard** — O_EXCL lockfile prevents two daemon instances from processing the same `status.json` simultaneously
+- **Retry Tier Escalation** — On resume retry #2+, escalates to the next delivery tier (e.g., skips tmux/PTY and goes to xdotool)
+- **Version Mismatch Detection** — Watchdog checks disk version every 5 minutes and warns if running code is outdated after a plugin update
+- **Prometheus Metrics** — Optional metrics endpoint on port 9199 with rate limit counters, resume stats, memory usage, and heartbeat age
+- **Per-Project Resume Prompts** — Configure different resume text per project path via `config.projectOverrides`
+- **Pattern Externalization** — Rate limit detection patterns configurable in `config.json` without code changes
+- **Startup Diagnostics** — Daemon logs platform, Node.js version, delivery tier, and loaded modules on start
+- **macOS LaunchAgent** — `install.sh` generates a LaunchAgent plist for auto-start on macOS login
+- **Windows Uninstall** — `install.ps1 -Uninstall` cleanly removes the daemon, scheduled tasks, and hooks
 
 ## Architecture: Tiered Delivery
 
@@ -532,6 +542,93 @@ node auto-resume-daemon.js dry-run
 ```
 
 Rate limits are detected and logged normally. All delivery calls are skipped and replaced with log lines indicating what would have been sent.
+
+## Prometheus Metrics
+
+Enable the metrics endpoint in `~/.claude/auto-resume/config.json`:
+
+```json
+{
+  "metrics": { "enabled": true, "port": 9199 }
+}
+```
+
+Scrape `http://127.0.0.1:9199/metrics` to get:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `autoresume_daemon_uptime_seconds` | gauge | Daemon uptime |
+| `autoresume_rate_limits_detected_total` | counter | Total rate limits detected |
+| `autoresume_resumes_attempted_total` | counter | Total resume attempts |
+| `autoresume_resumes_succeeded_total` | counter | Successful resumes |
+| `autoresume_resumes_failed_total` | counter | Failed resumes |
+| `autoresume_hook_fires_total` | counter | Total hook invocations |
+| `autoresume_heap_used_bytes` | gauge | Heap memory used |
+| `autoresume_rss_bytes` | gauge | Resident set size |
+| `autoresume_rate_limited` | gauge | Currently rate limited (0/1) |
+| `autoresume_reset_time_remaining_seconds` | gauge | Seconds until reset |
+| `autoresume_heartbeat_age_seconds` | gauge | Seconds since last heartbeat |
+
+## Advanced Configuration
+
+Configuration file: `~/.claude/auto-resume/config.json`
+
+### Per-Project Resume Prompts
+
+Override the resume text for specific project directories:
+
+```json
+{
+  "resumePrompt": "continue",
+  "projectOverrides": {
+    "/home/user/my-project": { "resumePrompt": "resume the current task" },
+    "C:\\Users\\me\\work": { "resumePrompt": "keep going" }
+  }
+}
+```
+
+### Custom Rate Limit Patterns
+
+Add or modify detection patterns without editing code:
+
+```json
+{
+  "patterns": {
+    "rateLimitPatterns": [
+      "You've hit your limit",
+      "You're out of extra usage",
+      "Rate limit exceeded",
+      "your custom pattern here"
+    ],
+    "falsePositivePatterns": [
+      "remove.*rate.*limit",
+      "rate.*limit.*hook"
+    ]
+  }
+}
+```
+
+Patterns are compiled as case-insensitive RegExp. Max length 200 chars. Nested quantifiers rejected to prevent ReDoS.
+
+### Daemon Tuning
+
+```json
+{
+  "daemon": {
+    "transcriptPolling": true,
+    "maxLogSizeMB": 1,
+    "staleThresholdHours": 2,
+    "hookWatchdogThresholdHours": 2
+  },
+  "resume": {
+    "postResetDelaySec": 10,
+    "maxRetries": 4,
+    "verificationWindowSec": 90,
+    "activeVerificationTimeoutMs": 15000,
+    "activeVerificationPollMs": 1000
+  }
+}
+```
 
 ## Dependencies
 
