@@ -64,6 +64,15 @@ try {
   // Module not available, will show error when command is used
 }
 
+let MetricsServer = null;
+try {
+  MetricsServer = require('./src/modules/metrics-server');
+} catch (err) {
+  // Module not available
+}
+
+let metricsServer = null;
+
 const VERSION = '1.3.0';
 const HOME_DIR = os.homedir();
 const BASE_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
@@ -71,6 +80,8 @@ const STATUS_FILE = path.join(BASE_DIR, 'status.json');
 const PID_FILE = path.join(BASE_DIR, 'daemon.pid');
 const LOG_FILE = path.join(BASE_DIR, 'daemon.log');
 const HEARTBEAT_FILE = path.join(BASE_DIR, 'heartbeat.json');
+const HOOK_HEARTBEAT_FILE = path.join(BASE_DIR, 'hook-heartbeat.json');
+const LOCK_FILE = path.join(BASE_DIR, 'daemon.lock');
 
 // ANSI color codes
 const colors = {
@@ -99,6 +110,8 @@ let transcriptPollInterval = null;
 let currentResetTime = null;
 let lastStatusMtime = null;
 let isBackgroundMode = false;  // Track if running detached (no stdout)
+let isDryRun = false;          // Dry-run mode: detect rate limits but don't send keystrokes
+let watchdogCycleCount = 0;    // Counter for watchdog version-check cadence
 let dashboard = null;  // Dashboard integration instance
 let processWatcher = null;  // Process watcher for transcript file monitoring
 let currentQueueEntryId = null;
@@ -130,11 +143,12 @@ function rotateLogIfNeeded() {
     const stats = fs.statSync(LOG_FILE);
     if (stats.size >= MAX_LOG_SIZE_BYTES) {
       const backupPath = LOG_FILE + '.1';
-      try { fs.unlinkSync(backupPath); } catch (e) { /* no backup yet */ }
+      try { fs.unlinkSync(backupPath); } catch (e) { /* no backup yet — first rotation */ }
       fs.renameSync(LOG_FILE, backupPath);
     }
   } catch (err) {
-    // Ignore rotation errors — don't break logging
+    // Use console.error here to avoid recursive log() call inside rotateLogIfNeeded
+    console.error(`[auto-resume] Log rotation failed: ${err.message}`);
   }
 }
 
@@ -175,7 +189,8 @@ function log(level, message) {
   try {
     fs.appendFileSync(LOG_FILE, logMessage + '\n');
   } catch (err) {
-    // Ignore log file errors
+    // Use console.error to avoid recursive log() call
+    console.error(`[auto-resume] Failed to write to log file: ${err.message}`);
   }
 }
 
@@ -208,6 +223,51 @@ function removePidFile() {
     }
   } catch (err) {
     log('error', `Failed to remove PID file: ${err.message}`);
+  }
+}
+
+/**
+ * Write lockfile with current PID and start timestamp.
+ * Used to detect and prevent concurrent daemon instances.
+ */
+function writeLockFile() {
+  try {
+    const tmpFile = LOCK_FILE + '.tmp';
+    fs.writeFileSync(tmpFile, JSON.stringify({
+      pid: process.pid,
+      started_at: new Date().toISOString(),
+    }), 'utf8');
+    fs.renameSync(tmpFile, LOCK_FILE);
+    log('debug', `Lock file written: ${LOCK_FILE} (PID: ${process.pid})`);
+  } catch (err) {
+    log('error', `Failed to write lock file: ${err.message}`);
+  }
+}
+
+/**
+ * Remove lockfile on shutdown
+ */
+function removeLockFile() {
+  try {
+    if (fs.existsSync(LOCK_FILE)) {
+      fs.unlinkSync(LOCK_FILE);
+      log('debug', 'Lock file removed');
+    }
+  } catch (err) {
+    log('error', `Failed to remove lock file: ${err.message}`);
+  }
+}
+
+/**
+ * Read lockfile and return {pid, started_at} or null.
+ */
+function readLockFile() {
+  try {
+    if (!fs.existsSync(LOCK_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'));
+    return (data && typeof data.pid === 'number') ? data : null;
+  } catch {
+    return null;
   }
 }
 
@@ -250,7 +310,7 @@ function stopHeartbeat() {
       fs.unlinkSync(HEARTBEAT_FILE);
     }
   } catch (err) {
-    // Ignore
+    log('debug', `Failed to remove heartbeat file: ${err.message}`);
   }
 }
 
@@ -278,6 +338,36 @@ function isProcessRunning(pid) {
     process.kill(pid, 0);
     return true;
   } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * Check if any Claude Code processes are currently running.
+ * Uses platform-appropriate process listing.
+ * @returns {boolean}
+ */
+function isClaudeRunning() {
+  try {
+    const { execSync } = require('child_process');
+    if (process.platform === 'win32') {
+      // Check for claude.exe or node.exe running claude
+      const out = execSync('tasklist /FI "IMAGENAME eq claude.exe" /NH', {
+        encoding: 'utf8', stdio: 'pipe', timeout: 5000
+      });
+      return out.toLowerCase().includes('claude.exe');
+    } else {
+      // POSIX: use pgrep for claude or node processes named claude
+      try {
+        const out = execSync('pgrep -f "claude" 2>/dev/null || true', {
+          encoding: 'utf8', stdio: 'pipe', timeout: 5000
+        });
+        return out.trim().length > 0;
+      } catch {
+        return false;
+      }
+    }
+  } catch {
     return false;
   }
 }
@@ -392,7 +482,7 @@ function sendNotification(title, message) {
       notifier.init({ enabled: true, sound: true });
       notifier.notify(title, message).catch(() => {});
     } catch (e) {
-      // Best effort
+      log('debug', `Failed to send notification "${title}": ${e.message}`);
     }
   }
 }
@@ -405,6 +495,10 @@ function sendNotification(title, message) {
  * @returns {Promise<void>}
  */
 function sendContinueViaXdotool(claudePid) {
+  if (isDryRun) {
+    log('info', '[DRY RUN] Would send keystrokes via xdotool/ydotool');
+    return Promise.resolve();
+  }
   return new Promise((resolve, reject) => {
     const isWayland = process.env.XDG_SESSION_TYPE === 'wayland' || !!process.env.WAYLAND_DISPLAY;
 
@@ -595,7 +689,7 @@ function sendContinueViaXdotool(claudePid) {
 
       exec(`/bin/sh "${tempScript}"`, { timeout: 30000 }, (err, stdout, stderr) => {
         // Clean up temp file
-        try { fs.unlinkSync(tempScript); } catch (e) { /* ignore */ }
+        try { fs.unlinkSync(tempScript); } catch (e) { log('debug', `Failed to remove temp script ${tempScript}: ${e.message}`); }
 
         if (err) {
           log('error', `Failed to send keystrokes: ${err.message}`);
@@ -628,16 +722,24 @@ function sendContinueViaXdotool(claudePid) {
  * NOT number key selection. Option 1 is selected by default, but we dismiss
  * the menu with Escape instead to avoid state ambiguity.
  */
-async function sendContinueToTerminals() {
+async function sendContinueToTerminals(opts = {}) {
+  if (isDryRun) {
+    log('info', `[DRY RUN] Would send "${getConfigValue('resumePrompt', 'continue')}" to ${os.platform()} terminals`);
+    return Promise.resolve();
+  }
+
+  const escalateTier = opts.escalateTier || false;
   const platform = os.platform();
 
   return new Promise((resolve, reject) => {
     if (platform === 'win32') {
       // Windows: Use tiered delivery (WezTerm CLI → PowerShell window targeting)
+      // On escalateTier, skip WezTerm/WT and go straight to PowerShell SendKeys.
       const resumeText = getConfigValue('resumePrompt', 'continue');
       deliverResume({
         resumeText,
         log,
+        skipTiers: escalateTier ? ['wezterm-cli', 'wt-multi-tab'] : [],
       }).then((result) => {
         if (result.success) {
           log('success', `Windows delivery succeeded via ${result.tiersAttempted.join(', ')}`);
@@ -707,8 +809,13 @@ async function sendContinueToTerminals() {
       });
     } else {
       // Linux: Use tiered delivery (tmux > PTY > xdotool)
+      // On escalateTier, skip tmux/PTY and go straight to xdotool fallback.
       const resumeText = getConfigValue('resumePrompt', 'continue');
       const menuSelection = getConfigValue('menuSelection', '1');
+      if (escalateTier) {
+        sendContinueViaXdotool(null).then(resolve).catch(reject);
+        return;
+      }
       deliverResume({
         resumeText,
         menuSelection,
@@ -835,10 +942,10 @@ function getConfigValue(key, defaultValue) {
  * @param {number} retryDelaySec - seconds between retries
  * @returns {Promise<boolean>} true if send succeeded
  */
-async function sendWithRetry(maxRetries = 3, retryDelaySec = 10) {
+async function sendWithRetry(maxRetries = 3, retryDelaySec = 10, opts = {}) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      await sendContinueToTerminals();
+      await sendContinueToTerminals(opts);
       return true;
     } catch (err) {
       log('error', `Keystroke send failed (attempt ${attempt}/${maxRetries}): ${err.message}`);
@@ -862,7 +969,20 @@ async function attemptResume() {
     log('info', 'Resume already in progress, skipping duplicate attemptResume() call');
     return;
   }
+
+  // Lockfile check: confirm we're the active daemon instance before acting
+  const lock = readLockFile();
+  if (lock && lock.pid !== process.pid) {
+    if (isProcessRunning(lock.pid)) {
+      log('warning', `[LOCK] Another daemon (PID: ${lock.pid}) holds the lock — skipping resume to prevent conflict`);
+      return;
+    }
+    // Dead lock holder — take over
+    writeLockFile();
+  }
+
   _isResumeInProgress = true;
+  if (metricsServer) metricsServer.increment('resumes_attempted');
 
   try {
   const maxRetries = getConfigValue('resume.maxRetries', 4);
@@ -877,7 +997,7 @@ async function attemptResume() {
     }
 
     log('info', 'Sending continue to terminals...');
-    const sent = await sendWithRetry(3, 10);
+    const sent = await sendWithRetry(3, 10, { escalateTier: attempt >= 2 });
     if (!sent) {
       log('error', 'Failed to send keystrokes, will retry resume cycle');
       continue;
@@ -903,7 +1023,7 @@ async function attemptResume() {
           if (active) transcriptPath = active.transcript_path;
         }
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { log('debug', `Failed to read status file for transcript path: ${e.message}`); }
 
     if (transcriptPath && fs.existsSync(transcriptPath)) {
       log('info', 'Verifying resume via transcript activity...');
@@ -918,6 +1038,7 @@ async function attemptResume() {
 
       if (verification.verified) {
         log('success', `Auto-resume CONFIRMED! Transcript activity detected (+${verification.newBytes} bytes in ${verification.elapsedMs}ms)`);
+        if (metricsServer) metricsServer.increment('resumes_succeeded');
         sendNotification('Claude Code Resumed', 'Auto-resume successful after rate limit reset.');
         clearStatus();
         currentResetTime = null;
@@ -952,7 +1073,7 @@ async function attemptResume() {
             }
           }
         } catch (e) {
-          // Ignore read errors during verification
+          log('debug', `Read error during resume verification: ${e.message}`);
         }
       }, 10000); // Check every 10 seconds
     });
@@ -968,6 +1089,7 @@ async function attemptResume() {
   }
 
   // All attempts exhausted
+  if (metricsServer) metricsServer.increment('resumes_failed');
   log('error', `Resume failed after ${maxRetries + 1} attempts`);
   if (NotificationManager) {
     try {
@@ -975,7 +1097,7 @@ async function attemptResume() {
       notifier.init({ enabled: true, sound: true });
       await notifier.notify('Auto-Resume Failed', `Failed to resume after ${maxRetries + 1} attempts. Manual intervention needed.`);
     } catch (e) {
-      // Best effort
+      log('debug', `Failed to send failure notification: ${e.message}`);
     }
   }
   } finally {
@@ -1158,10 +1280,11 @@ function watchStatusFile() {
         const staleThresholdMs = getConfigValue('daemon.staleThresholdHours', 2) * 60 * 60 * 1000;
         if (isResetTimeStale(nextEntry.reset_time, staleThresholdMs)) {
           log('info', 'Stale rate limit detected (reset_time > 2h ago), clearing status file');
-          try { fs.unlinkSync(STATUS_FILE); } catch (e) { /* ignore */ }
+          try { fs.unlinkSync(STATUS_FILE); } catch (e) { log('debug', `Failed to remove stale status file: ${e.message}`); }
           return;
         }
         if (!currentResetTime || currentResetTime.getTime() !== resetTime.getTime()) {
+          if (metricsServer) metricsServer.increment('rate_limits_detected');
           log('warning', '');
           log('warning', 'Rate limit detected!');
           log('info', `Reset time: ${resetTime.toLocaleString()}`);
@@ -1256,6 +1379,9 @@ function watchStatusFile() {
 function startSelfWatchdog() {
   selfWatchdogInterval = setInterval(() => {
     try {
+      // Increment cycle counter for periodic sub-tasks
+      watchdogCycleCount++;
+
       // Check 1: watch interval is still active
       if (isRunning && !watchInterval) {
         log('warning', '[WATCHDOG] Watch interval lost, restarting...');
@@ -1268,7 +1394,7 @@ function startSelfWatchdog() {
       } catch (e) {
         log('error', `[WATCHDOG] Base directory not writable: ${BASE_DIR}`);
         // Attempt to recreate
-        try { fs.mkdirSync(BASE_DIR, { recursive: true }); } catch (e2) { /* give up */ }
+        try { fs.mkdirSync(BASE_DIR, { recursive: true }); } catch (e2) { log('debug', `[WATCHDOG] Failed to recreate base dir ${BASE_DIR}: ${e2.message}`); }
       }
 
       // Check 3: memory usage < 200MB
@@ -1277,6 +1403,45 @@ function startSelfWatchdog() {
       if (heapMB > 200) {
         log('error', `[WATCHDOG] Memory usage too high: ${heapMB}MB. Exiting for restart.`);
         process.exit(1); // SessionStart hook will restart us
+      }
+
+      // Check 4: hook heartbeat watchdog — warn if Stop hook hasn't fired while Claude is running
+      try {
+        const hookWatchdogThresholdHours = getConfigValue('daemon.hookWatchdogThresholdHours', 2);
+        const thresholdMs = hookWatchdogThresholdHours * 60 * 60 * 1000;
+
+        if (fs.existsSync(HOOK_HEARTBEAT_FILE)) {
+          const hookHb = JSON.parse(fs.readFileSync(HOOK_HEARTBEAT_FILE, 'utf8'));
+          const lastRun = hookHb && hookHb.last_hook_run ? new Date(hookHb.last_hook_run).getTime() : 0;
+          const ageMs = Date.now() - lastRun;
+
+          if (ageMs > thresholdMs) {
+            // Only warn if Claude Code processes appear to be running
+            const claudeRunning = isClaudeRunning();
+            if (claudeRunning) {
+              const ageHours = (ageMs / (60 * 60 * 1000)).toFixed(1);
+              log('warning', `[WATCHDOG] Stop hook has not fired in over ${hookWatchdogThresholdHours} hours while Claude is running. Hook may be deregistered. (last run: ${ageHours}h ago)`);
+            }
+          }
+        }
+      } catch (e) {
+        // Non-fatal — hook heartbeat check is best-effort
+      }
+
+      // Check 5: version mismatch detection (every 5th cycle = ~5 minutes)
+      if (watchdogCycleCount % 5 === 0) {
+        try {
+          const pluginJsonPath = path.join(__dirname, '.claude-plugin', 'plugin.json');
+          if (fs.existsSync(pluginJsonPath)) {
+            const pluginData = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
+            if (pluginData.version && pluginData.version !== VERSION) {
+              log('warning', `[WATCHDOG] Version mismatch: running v${VERSION}, disk has v${pluginData.version}. Restart daemon to apply update.`);
+              sendNotification('Auto-Resume Update Available', `Running v${VERSION}, update v${pluginData.version} available. Restart daemon.`);
+            }
+          }
+        } catch (e) {
+          log('debug', `[WATCHDOG] Version check failed: ${e.message}`);
+        }
       }
     } catch (err) {
       log('error', `[WATCHDOG] Self-check failed: ${err.message}`);
@@ -1354,10 +1519,10 @@ function startTranscriptPolling() {
                   latestMtime = stats.mtimeMs;
                   latestFile = fullPath;
                 }
-              } catch (e) { /* skip unreadable */ }
+              } catch (e) { log('debug', `[POLL] Cannot stat transcript file ${fullPath}: ${e.message}`); }
             }
           }
-        } catch (e) { /* skip unreadable dirs */ }
+        } catch (e) { log('debug', `[POLL] Cannot read directory ${dir}: ${e.message}`); }
       };
       scanDir(projectsDir);
 
@@ -1422,13 +1587,22 @@ function startDaemon() {
     }
     fs.writeFileSync(crashLockFile, String(Math.floor(Date.now() / 1000)));
   } catch (e) {
-    // Non-fatal — continue startup
+    log('debug', `Failed to update crash lock file: ${e.message}`);
   }
 
-  // Check if already running
+  // Check if already running via PID file
   const existingPid = readPidFile();
   if (existingPid && isProcessRunning(existingPid)) {
     log('warning', `Daemon is already running (PID: ${existingPid})`);
+    log('info', 'Run "node auto-resume-daemon.js stop" to stop it first');
+    process.exit(1);
+  }
+
+  // Check lockfile for concurrent instance (catches near-simultaneous starts
+  // that might both pass the PID check above before either writes daemon.pid)
+  const existingLock = readLockFile();
+  if (existingLock && isProcessRunning(existingLock.pid)) {
+    log('warning', `Another daemon instance already holds the lock (PID: ${existingLock.pid}, started: ${existingLock.started_at})`);
     log('info', 'Run "node auto-resume-daemon.js stop" to stop it first');
     process.exit(1);
   }
@@ -1441,6 +1615,9 @@ function startDaemon() {
   // Ensure directories exist
   ensureDirectories();
 
+  // Write lockfile before PID file so we claim ownership early
+  writeLockFile();
+
   // Write PID file
   writePidFile();
 
@@ -1450,6 +1627,16 @@ function startDaemon() {
   // Show banner
   showBanner();
 
+  // Startup diagnostics
+  log('info', `Platform: ${os.platform()} (${os.arch()}) | Node ${process.version}`);
+  log('info', `Delivery tier: ${detectDeliveryTier()}`);
+  log('info', `HMAC: ${hmacIntegrity ? 'enabled' : 'disabled'} | Config: ${configManager ? 'loaded' : 'N/A'} | Analytics: ${AnalyticsCollector ? 'loaded' : 'N/A'} | Notifications: ${NotificationManager ? 'loaded' : 'N/A'}`);
+
+  if (isDryRun) {
+    log('warning', '============================================================');
+    log('warning', '[DRY RUN] Mode active — rate limits detected but NO keystrokes sent');
+    log('warning', '============================================================');
+  }
   log('success', `Daemon started (PID: ${process.pid})`);
   log('info', `Log file: ${LOG_FILE}`);
   log('info', `PID file: ${PID_FILE}`);
@@ -1463,6 +1650,11 @@ function startDaemon() {
   // Start dashboard servers if available
   if (DashboardIntegration) {
     startDashboard();
+  }
+
+  // Start Prometheus metrics server if enabled
+  if (MetricsServer && getConfigValue('metrics.enabled', false)) {
+    startMetricsServer();
   }
 
   // Check for existing rate limit status before starting watcher
@@ -1493,6 +1685,24 @@ function startDaemon() {
     log('debug', `Keep-alive server on port ${keepAlive.address().port}`);
   });
   keepAlive.on('error', () => {}); // Ignore port conflicts
+}
+
+/**
+ * Start Prometheus metrics server
+ */
+async function startMetricsServer() {
+  try {
+    const port = getConfigValue('metrics.port', 9199);
+    metricsServer = new MetricsServer({
+      port,
+      logger: { log: (level, msg) => log(level, msg) }
+    });
+    await metricsServer.start();
+    log('success', `Metrics server started on http://127.0.0.1:${port}/metrics`);
+  } catch (err) {
+    log('warning', `Failed to start metrics server: ${err.message}`);
+    metricsServer = null;
+  }
 }
 
 /**
@@ -1612,6 +1822,16 @@ function setupSignalHandlers() {
       }
     }
 
+    // Stop metrics server
+    if (metricsServer) {
+      try {
+        await metricsServer.stop();
+        log('info', 'Metrics server stopped');
+      } catch (error) {
+        log('debug', `Error stopping metrics server: ${error.message}`);
+      }
+    }
+
     // Send death notification if this is an error shutdown
     if (signal === 'ERROR' && NotificationManager) {
       try {
@@ -1619,12 +1839,13 @@ function setupSignalHandlers() {
         notifier.init({ enabled: true, sound: false });
         await notifier.notify('Auto-Resume Daemon Crashed', `Daemon exited due to: ${signal}`);
       } catch (e) {
-        // Best effort — don't let notification failure prevent clean shutdown
+        log('debug', `Failed to send crash notification during shutdown: ${e.message}`);
       }
     }
 
-    // Remove PID file
+    // Remove PID file and lockfile
     removePidFile();
+    removeLockFile();
 
     log('success', 'Daemon stopped');
     process.exit(0);
@@ -1663,12 +1884,46 @@ function setupSignalHandlers() {
         await notifier.notify('Auto-Resume Daemon Crashed',
           `Fatal error: ${err.message}. Daemon will restart on next Claude Code session.`);
       } catch (e) {
-        // Best effort — don't let notification failure prevent shutdown
+        log('debug', `Failed to send fatal error notification: ${e.message}`);
       }
     }
 
     shutdown('ERROR');
   });
+}
+
+/**
+ * Detect the delivery tier that will be used for this platform/environment.
+ * Uses only environment variables and os.platform() — no commands executed.
+ * @returns {string} Human-readable delivery tier description
+ */
+function detectDeliveryTier() {
+  if (os.platform() === 'win32') {
+    // Windows delivery: WezTerm CLI → Windows Terminal multi-tab → PowerShell SendKeys
+    if (process.env.WEZTERM_PANE != null || process.env.WEZTERM_EXECUTABLE) {
+      return 'windows (WezTerm CLI)';
+    }
+    if (process.env.WT_SESSION) {
+      return 'windows (Windows Terminal)';
+    }
+    return 'windows (PowerShell SendKeys)';
+  }
+
+  // Unix: tmux → pty → xdotool/ydotool
+  if (process.env.TMUX) {
+    return 'tmux';
+  }
+
+  const isWayland = process.env.XDG_SESSION_TYPE === 'wayland' || !!process.env.WAYLAND_DISPLAY;
+  if (isWayland) {
+    return 'ydotool (Wayland)';
+  }
+
+  if (process.env.DISPLAY) {
+    return 'xdotool (X11)';
+  }
+
+  return 'pty';
 }
 
 /**
@@ -1898,7 +2153,7 @@ async function testNotification(options = {}) {
           preferMessageBox = true;
         }
       } catch (e) {
-        // Ignore config errors, use default
+        log('debug', `Failed to read notification config, using defaults: ${e.message}`);
       }
     }
 
@@ -1927,6 +2182,7 @@ async function testNotification(options = {}) {
     return false;
   }
 }
+
 
 /**
  * Open GUI dashboard
@@ -2011,6 +2267,130 @@ async function openGui() {
 /**
  * Show help
  */
+/**
+ * Run a full-chain health check of the auto-resume system.
+ * Validates hook registration, daemon liveness, heartbeat freshness,
+ * directory writeability, HMAC availability, delivery tier, and modules.
+ */
+function runHealthCheck() {
+  var PASS = colors.green + '[PASS]' + colors.reset;
+  var FAIL = colors.red + '[FAIL]' + colors.reset;
+  var INFO = colors.cyan + '[INFO]' + colors.reset;
+  var WARN = colors.yellow + '[WARN]' + colors.reset;
+
+  console.log('');
+  console.log(colors.cyan + 'Auto-Resume Health Check' + colors.reset);
+  console.log('--------------------------------------------------');
+
+  // 1. Hook registered in settings.json
+  try {
+    var settingsPath = path.join(HOME_DIR, '.claude', 'settings.json');
+    if (fs.existsSync(settingsPath)) {
+      var settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      var stopHooks = (settings.hooks && settings.hooks.Stop) ? settings.hooks.Stop : [];
+      var hookList = Array.isArray(stopHooks) ? stopHooks : [stopHooks];
+      var registered = hookList.some(function(h) {
+        if (typeof h === 'string') return h.includes('rate-limit-hook');
+        if (h.command) return String(h.command).includes('rate-limit-hook');
+        // Nested format: { matcher: "...", hooks: [{type: "command", command: "..."}] }
+        if (Array.isArray(h.hooks)) {
+          return h.hooks.some(function(inner) {
+            return inner && inner.command && String(inner.command).includes('rate-limit-hook');
+          });
+        }
+        return false;
+      });
+      if (registered) {
+        console.log(PASS + ' Stop hook registered in settings.json');
+      } else {
+        console.log(FAIL + ' Stop hook NOT found in settings.json hooks.Stop');
+      }
+    } else {
+      console.log(FAIL + ' settings.json not found at ' + settingsPath);
+    }
+  } catch (e) {
+    console.log(FAIL + ' Could not read settings.json: ' + e.message);
+  }
+
+  // 2. Daemon PID alive
+  var pid = readPidFile();
+  if (pid && isProcessRunning(pid)) {
+    console.log(PASS + ' Daemon running (PID: ' + pid + ')');
+  } else if (pid) {
+    console.log(FAIL + ' PID file exists (PID: ' + pid + ') but process is not running');
+  } else {
+    console.log(FAIL + ' Daemon not running (no PID file)');
+  }
+
+  // 3. Heartbeat fresh (< 60 seconds)
+  try {
+    if (fs.existsSync(HEARTBEAT_FILE)) {
+      var hbStats = fs.statSync(HEARTBEAT_FILE);
+      var ageMs = Date.now() - hbStats.mtimeMs;
+      if (ageMs < 60000) {
+        console.log(PASS + ' Heartbeat fresh (' + Math.round(ageMs / 1000) + 's ago)');
+      } else {
+        var ageSec = Math.round(ageMs / 1000);
+        var label = ageSec > 60 ? (Math.round(ageSec / 60) + 'm ago') : (ageSec + 's ago');
+        console.log(FAIL + ' Heartbeat stale (last: ' + label + ')');
+      }
+    } else {
+      console.log(WARN + ' Heartbeat file not found (daemon may not be running)');
+    }
+  } catch (e2) {
+    console.log(FAIL + ' Could not check heartbeat: ' + e2.message);
+  }
+
+  // 4. Status directory writable
+  try {
+    fs.accessSync(BASE_DIR, fs.constants.W_OK);
+    console.log(PASS + ' Status directory writable');
+  } catch (e3) {
+    console.log(FAIL + ' Status directory NOT writable: ' + BASE_DIR);
+  }
+
+  // 5. HMAC available
+  if (hmacIntegrity) {
+    console.log(PASS + ' HMAC verification available');
+  } else {
+    console.log(WARN + ' HMAC verification not available (optional)');
+  }
+
+  // 6. Delivery tier
+  if (os.platform() === 'win32') {
+    console.log(INFO + ' Delivery tier: windows (WezTerm CLI / PowerShell window targeting)');
+  } else {
+    var healthSync = require('child_process').execSync;
+    var tier = 'xdotool (fallback)';
+    try {
+      healthSync('tmux -V', { stdio: 'pipe', timeout: 2000 });
+      tier = 'tmux';
+    } catch (e4) {
+      try {
+        healthSync('pgrep -f claude', { stdio: 'pipe', timeout: 2000 });
+        tier = 'pty';
+      } catch (e5) { /* fallback */ }
+    }
+    console.log(INFO + ' Delivery tier: ' + tier);
+  }
+
+  // 7. Modules loaded
+  var moduleStatus = [];
+  if (configManager) moduleStatus.push('config');
+  if (AnalyticsCollector) moduleStatus.push('analytics');
+  if (NotificationManager) moduleStatus.push('notifications');
+  if (DashboardIntegration) moduleStatus.push('dashboard');
+  if (hmacIntegrity) moduleStatus.push('hmac');
+  if (moduleStatus.length > 0) {
+    console.log(PASS + ' Modules: ' + moduleStatus.join(', '));
+  } else {
+    console.log(WARN + ' No optional modules loaded');
+  }
+
+  console.log('--------------------------------------------------');
+  console.log('');
+}
+
 function showHelp() {
   showBanner();
   console.log(`
@@ -2024,7 +2404,9 @@ COMMANDS:
     status      Check daemon status
     restart     Restart the daemon
     --reset     Clear stale rate limit status and recheck
+    --dry-run   Dry-run mode: detect rate limits but do NOT send keystrokes
     --test <s>  Test mode: countdown for <s> seconds then send keystrokes
+    health      Run full-chain health check (hook, daemon, heartbeat, modules)
     help        Show this help message
 
 MODULE COMMANDS:
@@ -2133,6 +2515,13 @@ function main() {
       });
       break;
 
+    case '--dry-run':
+    case 'dry-run':
+      isDryRun = true;
+      log('warning', '[DRY RUN] Running in dry-run mode — no keystrokes will be sent');
+      startDaemon();
+      break;
+
     case '--reset':
     case '-r':
     case 'reset':
@@ -2184,6 +2573,19 @@ function main() {
         log('error', `Failed to open GUI: ${err.message}`);
         process.exit(1);
       });
+      break;
+
+    case 'health':
+    case '--health':
+      runHealthCheck();
+      process.exit(0);
+      break;
+
+    case 'dry-run':
+    case '--dry-run':
+      isDryRun = true;
+      log('warning', '[DRY RUN] Running in dry-run mode — no keystrokes will be sent');
+      startDaemon();
       break;
 
     default:

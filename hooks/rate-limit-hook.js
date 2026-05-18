@@ -19,6 +19,7 @@ const os = require('os');
 const HOME_DIR = os.homedir();
 const STATUS_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
 const STATUS_FILE = path.join(STATUS_DIR, 'status.json');
+const HOOK_HEARTBEAT_FILE = path.join(STATUS_DIR, 'hook-heartbeat.json');
 
 // Only match ACTUAL API rate limit errors, not conversational mentions
 const RATE_LIMIT_PATTERNS = [
@@ -214,6 +215,26 @@ function formatResetTime(resetTime, timezone) {
   }
 }
 
+/**
+ * Write hook heartbeat so the daemon watchdog knows the Stop hook is still firing.
+ * Called on every hook invocation regardless of whether a rate limit is detected.
+ */
+function writeHookHeartbeat() {
+  try {
+    if (!fs.existsSync(STATUS_DIR)) {
+      fs.mkdirSync(STATUS_DIR, { recursive: true });
+    }
+    const tmpFile = HOOK_HEARTBEAT_FILE + '.tmp';
+    fs.writeFileSync(tmpFile, JSON.stringify({
+      last_hook_run: new Date().toISOString(),
+      pid: process.pid,
+    }), 'utf8');
+    fs.renameSync(tmpFile, HOOK_HEARTBEAT_FILE);
+  } catch {
+    // Non-fatal — heartbeat is best-effort
+  }
+}
+
 async function main() {
   try {
     if (process.stdin.isTTY) {
@@ -238,6 +259,9 @@ async function main() {
       process.exit(0);
       return;
     }
+
+    // Write heartbeat so daemon watchdog knows the hook is still firing
+    writeHookHeartbeat();
 
     // Quick check: if stop_reason is provided and is NOT rate-limit related, skip
     const stopReason = input.stop_reason || '';
