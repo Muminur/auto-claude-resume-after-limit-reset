@@ -11,8 +11,9 @@
  * Default hardcoded rate limit patterns.
  */
 const DEFAULT_PATTERNS = [
-  /You['\u2019]ve hit your (?:usage )?limit.*?(?:resets\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\))?/i,
-  /You['\u2019]ve hit your org['\u2019]s monthly usage limit/i,
+  /You['\u2018\u2019]ve hit your (?:usage |monthly spend )?limit.*?(?:resets\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\))?/i,
+  /You['\u2018\u2019]ve hit your org['\u2018\u2019]s monthly usage limit/i,
+  /monthly spend limit/i,
   /exceeded your current quota/i,
   /Rate limit exceeded/i,
   /"type"\s*:\s*"rate_limit_error"/,

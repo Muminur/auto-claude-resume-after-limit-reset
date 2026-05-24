@@ -20,11 +20,12 @@ const STATUS_FILE = path.join(STATUS_DIR, 'status.json');
 
 // Same patterns as the hook
 const RATE_LIMIT_PATTERNS = [
-  /You've hit your limit/i,
-  /You're out of extra usage/i,
+  /You['‘’]ve hit your (?:usage |monthly spend )?limit/i,
+  /You’re out of extra usage/i,
   /out of extra usage/i,
   /out of.*usage.*resets/i,
-  /You['’]ve hit your org['’]s monthly usage limit/i,
+  /You['‘’]ve hit your org[‘’]s monthly usage limit/i,
+  /monthly spend limit/i,
   /exceeded your current quota/i,
   /Rate limit exceeded/i,
   /"type"\s*:\s*"rate_limit_error"/,
