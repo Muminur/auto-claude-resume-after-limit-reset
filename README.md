@@ -53,12 +53,12 @@ Claude Code resumes automatically
 - **Stale PID Validation** — Validates daemon PID with `process.kill(pid, 0)`, Windows `tasklist` fallback
 - **Windows Terminal Multi-Tab** — Uses `wt.exe -w 0 focus-tab --target N` to deliver to every tab in Windows Terminal; probes `wt.exe` via `execFile --version` to correctly detect App Execution Alias install paths
 - **Proactive Usage Warning** — Warns at 80% of historical rate limit threshold via PostToolUse hook
-- **Hot-Reload Config** — Watches `config.json` for changes and reloads in-memory without restart
+- **Hot-Reload Config** — Watches the config directory (not the file inode) so atomic saves (tmp→rename) are detected correctly; reloads in-memory without restart
 - **Pattern Versioning** — Configurable rate limit detection patterns with version tracking
 - **HMAC Integrity** — Signs `status.json` with HMAC-SHA256 and verifies before processing to prevent tampering
 - **Simulate Command** — `/auto-resume:simulate` creates test rate limit with 30s countdown
 - **Status Line** — `GET /status-line` endpoint returns daemon health as single-line string
-- **O_NOCTTY PTY Write** — PTY writes use `O_NOCTTY` flag so the TTY never becomes the daemon's controlling terminal, preventing signal bleed
+- **O_NOCTTY + O_NONBLOCK PTY Write** — PTY/TTY writes use `O_NOCTTY` (no controlling terminal) and `O_NONBLOCK` (full-buffer writes throw `EAGAIN` immediately instead of blocking the event loop)
 - **PTY Write Timeout** — PTY delivery times out after 5 seconds to prevent the daemon from blocking on a hung terminal
 - **Atomic File Writes** — All `status.json` writers use write-to-tmp-then-rename to prevent corruption from concurrent access
 - **Graceful Shutdown Timeout** — Daemon force-exits after 5 seconds if async shutdown hangs
@@ -433,10 +433,10 @@ cd auto-claude-resume-after-limit-reset && git pull && ./install.sh
 ## Security
 
 - **HMAC-SHA256 Integrity** — `status.json` is signed on write and verified on read. Tampered files are rejected.
-- **No Shell Interpolation** — All child process calls use `execFile()` with argument arrays, never `exec()` with template strings.
+- **No Shell Interpolation** — All child process calls use `execFile()` with argument arrays, never `exec()` with template strings. macOS `osascript` invocations escape the keystroke text and use `execFile` to prevent AppleScript/shell injection.
 - **Atomic Writes** — All `status.json` writers use tmp-file-then-rename to prevent corruption from concurrent access.
 - **Path Traversal Guard** — Transcript scanner validates `realpathSync` to prevent symlink escape from `~/.claude/projects/`.
-- **O_NOCTTY Flag** — PTY writes use `O_NOCTTY` so the daemon never acquires a controlling terminal.
+- **O_NOCTTY + O_NONBLOCK Flags** — PTY/TTY writes use `O_NOCTTY` (daemon never acquires a controlling terminal) and `O_NONBLOCK` (blocked writes fail with `EAGAIN` instead of hanging the event loop).
 
 ## API Reference
 
@@ -631,6 +631,35 @@ Patterns are compiled as case-insensitive RegExp. Max length 200 chars. Nested q
 ```
 
 ## Changelog
+
+### v1.17.0 — Bug Fixes: Timezone, Data Loss, Reliability (2026-05-25)
+
+**Timezone (high-impact — up to 12-hour error fixed)**
+- **fix(timezone):** Replaced DST-unaware static timezone table in `index.js` with `Intl`-based `getTimezoneOffset()`. All IANA timezone names now return the correct offset including DST transitions. Previously `America/New_York` always returned −5 (EST); it now correctly returns −4 during EDT.
+- **fix(hook):** `parseResetTime` in `rate-limit-hook.js` now applies the named timezone offset when computing the reset timestamp. Previously the hook always used the machine's local wall-clock, causing ±12-hour errors for users in different timezones.
+
+**Data loss (silent bugs fixed)**
+- **fix(daemon):** `transcriptPath` is now captured from `status.json` *before* `clearStatus()` deletes the file. Previously the read happened after deletion, so `transcriptPath` was always `null` and active transcript verification never ran.
+- **fix(daemon):** Removed duplicate `clearStatus()` call in the verification success branch. The first call (after delivery) already removed the queue entry; the second call was deleting the entire queue file, destroying any remaining pending entries.
+
+**Reliability**
+- **fix(daemon):** `writeLockFile()` no longer calls itself recursively on `EEXIST`. Replaced with a single inline retry, eliminating a potential stack overflow under lock contention.
+- **fix(daemon):** `verificationCheckInterval` promoted to module scope and cleared in `shutdown()`. Previously the passive verification `setInterval` leaked after SIGTERM, firing for up to 90 seconds post-shutdown.
+- **fix(daemon):** `verifyResumeByTranscript` now accepts an optional `AbortSignal`. The daemon creates an `AbortController` and aborts it during shutdown, cancelling the recursive `setTimeout` chain.
+- **fix(daemon, macOS):** TTY `openSync` now includes `O_NONBLOCK` so a full terminal input buffer throws `EAGAIN` instead of blocking the Node.js event loop indefinitely.
+- **fix(daemon, macOS):** `ps` query extended from `pid,tty,comm` to `pid,tty,comm,args`. Claude Code running as `node /usr/local/bin/claude` (where `comm` is `node`) is now detected by matching `args`.
+- **fix(pty-delivery):** PTY `openSync` now includes `O_NONBLOCK`, making the `Promise.race` timeout effective. Previously all I/O was synchronous so `setTimeout` inside the timeout promise could never fire.
+- **fix(config-hot-reload):** `fs.watch` now watches the parent directory and filters by filename. Previously it watched the config file's inode directly; atomic saves (tmp → rename) replaced the inode, silently stopping hot-reload after the first config write.
+- **fix(api-server):** `server.once('error', reject)` is now wired before `server.listen()`. Previously, port-in-use errors were emitted as unhandled `'error'` events and crashed the process.
+
+**Correctness**
+- **fix(daemon):** Success log now reads `Delivery succeeded (tried: tmux, pty)` instead of `Delivery succeeded via undefined` — `result.tier` (singular) was never set; the correct key is `result.tiersAttempted`.
+- **fix(daemon):** `return true` inside the `stopDaemon` `setInterval` callback removed — it was a no-op that returned from the callback, not from `stopDaemon`.
+
+**Security**
+- **fix(macOS):** `sendKeystrokes` now uses `execFile('osascript', ['-e', script])` with the text escaped for AppleScript, replacing the old `exec(\`osascript -e '${script}'\`)` which broke on any input containing `"` or `'`.
+
+---
 
 ### v1.16.3 — Windows WezTerm Delivery Fixes (2026-05-25)
 
