@@ -77,4 +77,13 @@ describe('buildWindowsKeystrokeScript — multi-terminal delivery', () => {
     const script = getScript();
     expect(script).toContain('# Strategy 4:');
   });
+
+  test('Strategy 1 only targets known terminal process names (not explorer, notepad, etc.)', () => {
+    const script = getScript();
+    const s1 = extractStrategy1(script);
+    expect(s1).toContain('$knownTerminals');
+    expect(s1).toContain('WindowsTerminal');
+    expect(s1).toContain('wezterm-gui');
+    expect(s1).toContain('$knownTerminals -contains $ancestor.Name');
+  });
 });

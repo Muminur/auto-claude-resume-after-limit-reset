@@ -214,7 +214,8 @@ foreach ($name in $claudeProcessNames) {
             if ($targetedPids.ContainsKey([int]$ancestorId)) { continue }
             try {
                 $ancestor = Get-Process -Id $ancestorId -ErrorAction SilentlyContinue
-                if ($ancestor -and $ancestor.MainWindowHandle -ne 0 -and $ancestor.Id -ne $myPid) {
+                $knownTerminals = @('WindowsTerminal', 'WindowsTerminalPreview', 'wezterm-gui', 'pwsh', 'powershell', 'cmd', 'bash', 'mintty', 'alacritty')
+                if ($ancestor -and $ancestor.MainWindowHandle -ne 0 -and $ancestor.Id -ne $myPid -and $knownTerminals -contains $ancestor.Name) {
                     try { [AutoResume.NativeWin]::ShowWindow($ancestor.MainWindowHandle, 9) } catch {}
                     if ($shell.AppActivate($ancestor.Id)) {
                         Send-ResumeKeys "$($ancestor.Name) (PID $($ancestor.Id), ancestor of $name PID $($proc.Id))"
