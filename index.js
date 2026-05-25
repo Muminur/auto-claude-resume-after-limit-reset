@@ -12,7 +12,7 @@
  */
 
 const readline = require('readline');
-const { exec, spawn } = require('child_process');
+const { exec, execFile, spawn } = require('child_process');
 const os = require('os');
 
 const VERSION = '1.0.0';
@@ -29,45 +29,6 @@ const colors = {
   white: '\x1b[37m',
 };
 
-// Timezone offsets (hours from UTC)
-const timezoneOffsets = {
-  // Asia
-  'Asia/Dhaka': 6,
-  'Asia/Kolkata': 5.5,
-  'Asia/Tokyo': 9,
-  'Asia/Shanghai': 8,
-  'Asia/Singapore': 8,
-  'Asia/Seoul': 9,
-  'Asia/Dubai': 4,
-  'Asia/Jakarta': 7,
-  'Asia/Manila': 8,
-  'Asia/Bangkok': 7,
-  'Asia/Hong_Kong': 8,
-  // Americas
-  'America/New_York': -5,
-  'America/Los_Angeles': -8,
-  'America/Chicago': -6,
-  'America/Denver': -7,
-  'America/Toronto': -5,
-  'America/Vancouver': -8,
-  'America/Sao_Paulo': -3,
-  // Europe
-  'Europe/London': 0,
-  'Europe/Paris': 1,
-  'Europe/Berlin': 1,
-  'Europe/Moscow': 3,
-  'Europe/Amsterdam': 1,
-  // Australia
-  'Australia/Sydney': 11,
-  'Australia/Melbourne': 11,
-  'Australia/Perth': 8,
-  // Pacific
-  'Pacific/Auckland': 13,
-  'Pacific/Honolulu': -10,
-  // Default
-  UTC: 0,
-  GMT: 0,
-};
 
 // Logging utilities
 function log(level, message) {
@@ -150,18 +111,14 @@ function showVersion() {
 }
 
 /**
- * Get timezone offset in hours
+ * Get timezone offset in hours from UTC via Intl — DST-aware.
  */
 function getTimezoneOffset(timezoneName) {
-  if (timezoneOffsets[timezoneName] !== undefined) {
-    return timezoneOffsets[timezoneName];
-  }
-
-  // Try to get from system
   try {
     const now = new Date();
-    const localOffset = -now.getTimezoneOffset() / 60;
-    return localOffset;
+    const utcDate = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
+    const tzDate  = new Date(now.toLocaleString('en-US', { timeZone: timezoneName }));
+    return (tzDate - utcDate) / 3600000;
   } catch {
     return 0;
   }
@@ -288,15 +245,11 @@ async function sendKeystrokes(text) {
         }
       });
     } else if (platform === 'darwin') {
-      // macOS: Use osascript
-      const script = `
-        tell application "System Events"
-          keystroke "${text}"
-          keystroke return
-        end tell
-      `;
+      // macOS: Use osascript — execFile avoids shell quoting issues
+      const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const script = `tell application "System Events"\n  keystroke "${escaped}"\n  keystroke return\nend tell`;
 
-      exec(`osascript -e '${script}'`, (error) => {
+      execFile('osascript', ['-e', script], (error) => {
         if (error) {
           log('error', `Failed to send keystrokes: ${error.message}`);
           reject(error);

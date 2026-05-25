@@ -36,10 +36,13 @@ function createConfigWatcher(configPath, onReload, options = {}) {
     }
   }
 
-  // Try fs.watch first
+  // Watch the parent directory — atomic saves (tmp→rename) replace the inode so
+  // watching the file path directly stops working after the first atomic write.
   try {
-    fsWatcher = fs.watch(configPath, (eventType) => {
-      if (eventType === 'change' || eventType === 'rename') {
+    const configDir  = require('path').dirname(configPath);
+    const configBase = require('path').basename(configPath);
+    fsWatcher = fs.watch(configDir, (eventType, filename) => {
+      if (filename === configBase) {
         reloadConfig();
       }
     });

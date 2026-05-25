@@ -65,6 +65,15 @@ function parseResetTime(message) {
     else if (ampm.toLowerCase() === 'am' && resetHour === 12) resetHour = 0;
     const resetDate = new Date(now);
     resetDate.setHours(resetHour, resetMinute, 0, 0);
+    // Apply the named timezone offset so the reset time is UTC-correct regardless of local TZ
+    try {
+      const tzName = timezone.trim();
+      const utcDate = new Date(resetDate.toLocaleString('en-US', { timeZone: 'UTC' }));
+      const tzDate  = new Date(resetDate.toLocaleString('en-US', { timeZone: tzName }));
+      const tzOffsetMs   = tzDate - utcDate;  // target TZ offset vs UTC in ms
+      const localOffsetMs = -resetDate.getTimezoneOffset() * 60000;
+      resetDate.setTime(resetDate.getTime() + (localOffsetMs - tzOffsetMs));
+    } catch { /* invalid IANA name — use local time as-is */ }
     if (resetDate <= now) resetDate.setDate(resetDate.getDate() + 1);
     return { reset_time: resetDate.toISOString(), timezone: timezone.trim() };
   }

@@ -7,6 +7,7 @@ async function verifyResumeByTranscript(opts) {
     baselineSize,
     timeoutMs = 15000,
     pollIntervalMs = 1000,
+    signal = null,
   } = opts;
 
   const startTime = Date.now();
@@ -14,6 +15,10 @@ async function verifyResumeByTranscript(opts) {
   return new Promise((resolve) => {
     const check = () => {
       const elapsed = Date.now() - startTime;
+
+      if (signal?.aborted) {
+        return resolve({ verified: false, newBytes: 0, elapsedMs: elapsed });
+      }
 
       if (elapsed >= timeoutMs) {
         return resolve({ verified: false, newBytes: 0, elapsedMs: elapsed });

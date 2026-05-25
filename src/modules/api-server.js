@@ -117,11 +117,12 @@ class ApiServer extends EventEmitter {
         this._handleRequest(req, res);
       });
 
-      // Start server
+      // Start server — wire 'error' before listen(); the callback never receives an error
       await new Promise((resolve, reject) => {
-        this.server.listen(this.config.port, (err) => {
-          if (err) reject(err);
-          else resolve();
+        this.server.once('error', reject);
+        this.server.listen(this.config.port, () => {
+          this.server.removeListener('error', reject);
+          resolve();
         });
       });
 

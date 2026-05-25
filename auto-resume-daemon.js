@@ -73,7 +73,7 @@ try {
 
 let metricsServer = null;
 
-const VERSION = '1.16.3';
+const VERSION = '1.17.0';
 const HOME_DIR = os.homedir();
 const BASE_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
 const STATUS_FILE = path.join(BASE_DIR, 'status.json');
@@ -107,6 +107,8 @@ let countdownInterval = null;
 let heartbeatInterval = null;
 let selfWatchdogInterval = null;
 let transcriptPollInterval = null;
+let verificationCheckInterval = null;
+let verificationAbortController = null;
 let currentResetTime = null;
 let lastStatusMtime = null;
 let isBackgroundMode = false;  // Track if running detached (no stdout)
@@ -247,9 +249,17 @@ function writeLockFile() {
         log('warning', `Lock held by PID ${existing.pid} — cannot acquire`);
         return false;
       }
-      // Dead lock holder — force overwrite
+      // Dead lock holder — force overwrite, then inline single retry (no recursion)
       try { fs.unlinkSync(LOCK_FILE); } catch (e) { /* ignore */ }
-      return writeLockFile(); // Retry once
+      try {
+        const retryFd = fs.openSync(LOCK_FILE, 'wx');
+        fs.writeSync(retryFd, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }));
+        fs.closeSync(retryFd);
+        return true;
+      } catch (retryErr) {
+        log('error', `Lock retry failed: ${retryErr.message}`);
+        return false;
+      }
     }
     log('error', `Failed to write lock file: ${err.message}`);
     return false;
@@ -418,7 +428,6 @@ function stopDaemon() {
         clearInterval(waitForExit);
         removePidFile();
         log('success', 'Daemon stopped successfully');
-        return true;
       }
 
       if (attempts >= maxAttempts) {
@@ -769,7 +778,7 @@ async function sendContinueToTerminals(opts = {}) {
     } else if (platform === 'darwin') {
       // macOS: Find Claude Code processes and write directly to their TTY devices
       // This avoids needing Accessibility permissions (osascript + System Events)
-      exec('ps -eo pid,tty,comm', (err, stdout) => {
+      exec('ps -eo pid,tty,comm,args', (err, stdout) => {
         if (err) {
           log('error', `Failed to list processes: ${err.message}`);
           reject(err);
@@ -781,8 +790,10 @@ async function sendContinueToTerminals(opts = {}) {
           const parts = line.trim().split(/\s+/);
           if (parts.length < 3) continue;
           const tty = parts[1];
-          const comm = parts.slice(2).join(' ');
-          if (/claude/i.test(comm) && tty !== '??' && tty !== '?') {
+          const comm = parts[2];
+          const args = parts.slice(3).join(' ');
+          // Match comm OR args — catches `node /usr/local/bin/claude` patterns
+          if ((/claude/i.test(comm) || /claude/i.test(args)) && tty !== '??' && tty !== '?') {
             claudeProcs.push({ tty: '/dev/' + tty, comm });
           }
         }
@@ -797,8 +808,8 @@ async function sendContinueToTerminals(opts = {}) {
         let sent = 0;
         for (const proc of claudeProcs) {
           try {
-            // O_NOCTTY: prevent TTY from becoming daemon's controlling terminal
-            const fd = fs.openSync(proc.tty, fs.constants.O_WRONLY | fs.constants.O_NOCTTY);
+            // O_NOCTTY: don't adopt as controlling TTY; O_NONBLOCK: fail-fast if buffer full
+            const fd = fs.openSync(proc.tty, fs.constants.O_WRONLY | fs.constants.O_NOCTTY | fs.constants.O_NONBLOCK);
             // Escape to dismiss any active modal/dialog
             fs.writeSync(fd, Buffer.from([0x1B]));
             // Menu option selection (resume) if Claude Code shows a numbered menu
@@ -837,7 +848,7 @@ async function sendContinueToTerminals(opts = {}) {
         xdotoolFallback: () => sendContinueViaXdotool(null),
       }).then((result) => {
         if (result.success) {
-          log('success', `Delivery succeeded via ${result.tier} (tried: ${result.tiersAttempted.join(', ')})`);
+          log('success', `Delivery succeeded (tried: ${result.tiersAttempted.join(', ')})`);
           resolve();
         } else {
           log('error', `All delivery tiers failed: ${result.error} (tried: ${result.tiersAttempted.join(', ')})`);
@@ -1017,16 +1028,7 @@ async function attemptResume() {
       continue;
     }
 
-    // Clear status IMMEDIATELY after successful delivery to prevent re-firing
-    // NOTE: Do NOT clear currentResetTime here — it guards watchStatusFile()
-    // from starting new countdowns. It gets cleared in stopCountdown() later.
-    log('info', 'Keystrokes delivered, clearing status to prevent duplicate sends');
-    clearStatus();
-
-    // Record the timestamp right after sending
-    const sentAt = Date.now();
-
-    // Active verification: check for new transcript activity
+    // Read transcript path BEFORE clearing status (clearStatus deletes STATUS_FILE)
     let transcriptPath = null;
     try {
       if (fs.existsSync(STATUS_FILE)) {
@@ -1039,22 +1041,33 @@ async function attemptResume() {
       }
     } catch (e) { log('debug', `Failed to read status file for transcript path: ${e.message}`); }
 
+    // Clear status IMMEDIATELY after successful delivery to prevent re-firing
+    // NOTE: Do NOT clear currentResetTime here — it guards watchStatusFile()
+    // from starting new countdowns. It gets cleared in stopCountdown() later.
+    log('info', 'Keystrokes delivered, clearing status to prevent duplicate sends');
+    clearStatus();
+
+    // Record the timestamp right after sending
+    const sentAt = Date.now();
+
     if (transcriptPath && fs.existsSync(transcriptPath)) {
       log('info', 'Verifying resume via transcript activity...');
       const baselineStats = fs.statSync(transcriptPath);
+      verificationAbortController = new AbortController();
       const verification = await verifyResumeByTranscript({
         transcriptPath,
         baselineMtime: baselineStats.mtimeMs,
         baselineSize: baselineStats.size,
         timeoutMs: getConfigValue('resume.activeVerificationTimeoutMs', 15000),
         pollIntervalMs: getConfigValue('resume.activeVerificationPollMs', 1000),
+        signal: verificationAbortController.signal,
       });
+      verificationAbortController = null;
 
       if (verification.verified) {
         log('success', `Auto-resume CONFIRMED! Transcript activity detected (+${verification.newBytes} bytes in ${verification.elapsedMs}ms)`);
         if (metricsServer) metricsServer.increment('resumes_succeeded');
         sendNotification('Claude Code Resumed', 'Auto-resume successful after rate limit reset.');
-        clearStatus();
         currentResetTime = null;
         return;
       } else {
@@ -1067,10 +1080,10 @@ async function attemptResume() {
     // Watch for re-detection within the verification window
     log('info', `Verifying resume for ${verificationWindowSec}s...`);
     const reDetected = await new Promise((resolve) => {
-      const checkInterval = setInterval(() => {
+      verificationCheckInterval = setInterval(() => {
         const elapsed = (Date.now() - sentAt) / 1000;
         if (elapsed >= verificationWindowSec) {
-          clearInterval(checkInterval);
+          clearInterval(verificationCheckInterval); verificationCheckInterval = null;
           resolve(false); // No re-detection — success!
         }
 
@@ -1081,7 +1094,7 @@ async function attemptResume() {
             if (status.detected && status.last_detected) {
               const detectedAt = new Date(status.last_detected).getTime();
               if (detectedAt > sentAt) {
-                clearInterval(checkInterval);
+                clearInterval(verificationCheckInterval); verificationCheckInterval = null;
                 resolve(true); // Re-detected — resume failed
               }
             }
@@ -1835,6 +1848,18 @@ function setupSignalHandlers() {
     if (transcriptPollInterval) {
       clearInterval(transcriptPollInterval);
       transcriptPollInterval = null;
+    }
+
+    // Stop passive verification interval if active
+    if (verificationCheckInterval) {
+      clearInterval(verificationCheckInterval);
+      verificationCheckInterval = null;
+    }
+
+    // Cancel active transcript verifier if running
+    if (verificationAbortController) {
+      verificationAbortController.abort();
+      verificationAbortController = null;
     }
 
     // Stop process watcher

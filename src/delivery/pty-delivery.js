@@ -45,7 +45,8 @@ async function sendViaPty(ptyPath, text, opts = {}) {
   const writePromise = new Promise((resolve, reject) => {
     try {
       const menuSelection = opts.menuSelection || '1';
-      const fd = fs.openSync(ptyPath, fs.constants.O_WRONLY | fs.constants.O_NOCTTY);
+      // O_NONBLOCK: fail-fast with EAGAIN if PTY input buffer is full rather than blocking the event loop
+      const fd = fs.openSync(ptyPath, fs.constants.O_WRONLY | fs.constants.O_NOCTTY | fs.constants.O_NONBLOCK);
 
       // Phase 1: Dismiss any open dialog
       fs.writeSync(fd, Buffer.from([0x1B])); // Escape
