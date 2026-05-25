@@ -23,8 +23,8 @@ const newVersion = marketplace.plugins[0].version;
 
 const checkOnly = process.argv.includes('--check');
 
-// Version pattern: matches X.Y.Z in path context (e.g., /1.4.11/)
-const versionPattern = /\/(\d+\.\d+\.\d+)\//g;
+// Version pattern: matches X.Y.Z in path context (e.g., /1.4.11/ or \1.4.11\)
+const versionPattern = /([/\\])(\d+\.\d+\.\d+)([/\\])/g;
 
 const commandFiles = fs.readdirSync(COMMANDS_DIR)
   .filter(f => f.endsWith('.md'))
@@ -37,7 +37,7 @@ commandFiles.forEach(file => {
   let content = fs.readFileSync(file, 'utf8');
   const originalContent = content;
 
-  content = content.replace(versionPattern, `/${newVersion}/`);
+  content = content.replace(versionPattern, (_, before, _ver, after) => `${before}${newVersion}${after}`);
 
   if (content !== originalContent) {
     if (checkOnly) {
