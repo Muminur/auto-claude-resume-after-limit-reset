@@ -198,6 +198,7 @@ function Get-ParentPid {
 
 # Strategy 1: Walk process tree from node.exe / claude.exe to find the hosting terminal.
 # This is the most accurate method — targets the exact terminal running Claude Code.
+$targetedPids = @{}
 $claudeProcessNames = @('node', 'claude')
 foreach ($name in $claudeProcessNames) {
     $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
@@ -208,21 +209,20 @@ foreach ($name in $claudeProcessNames) {
 
         foreach ($ancestorId in @($parentId, $grandParentId)) {
             if (-not $ancestorId) { continue }
+            if ($targetedPids.ContainsKey([int]$ancestorId)) { continue }
             try {
                 $ancestor = Get-Process -Id $ancestorId -ErrorAction SilentlyContinue
                 if ($ancestor -and $ancestor.MainWindowHandle -ne 0 -and $ancestor.Id -ne $myPid) {
                     try { [AutoResume.NativeWin]::ShowWindow($ancestor.MainWindowHandle, 9) } catch {}
                     if ($shell.AppActivate($ancestor.Id)) {
                         Send-ResumeKeys "$($ancestor.Name) (PID $($ancestor.Id), ancestor of $name PID $($proc.Id))"
+                        $targetedPids[[int]$ancestor.Id] = $true
                         $sent = $true
-                        break
                     }
                 }
             } catch {}
         }
-        if ($sent) { break }
     }
-    if ($sent) { break }
 }
 
 # Strategy 2: Find terminal window by process name, excluding this script's own process.
@@ -592,4 +592,5 @@ module.exports = {
   findWtExe,
   buildResumeKeystrokeBlock,
   buildMultiTabScript,
+  buildWindowsKeystrokeScript,
 };
