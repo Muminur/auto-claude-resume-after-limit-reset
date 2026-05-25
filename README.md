@@ -630,6 +630,14 @@ Patterns are compiled as case-insensitive RegExp. Max length 200 chars. Nested q
 }
 ```
 
+## Changelog
+
+### v1.16.3 — Windows WezTerm Delivery Fixes (2026-05-25)
+
+- **fix(version-script):** `scripts/update-command-versions.js` now handles Windows backslash paths (`\1.4.13\`) in addition to forward-slash paths. All `commands/*.md` Windows examples were stuck on v1.4.13; they now correctly reflect the current version.
+- **fix(windows-delivery):** `buildWindowsKeystrokeScript` Strategy 1 previously broke out of all loops after the first terminal found. Replaced with a `$targetedPids` deduplication hashtable so the resume signal is delivered to **every** terminal hosting a Claude process (e.g., both Windows Terminal and WezTerm simultaneously).
+- **fix(wezterm-cli):** `tryWeztermCli` now makes a single `wezterm cli list --format json` call instead of two. The old exit-code-only guard was unreliable in MSYS2/Git Bash (exits 0 even on socket failure); the new code validates by checking that stdout is a parseable JSON array.
+
 ## Dependencies
 
 - **Node.js** >= 16.0.0
