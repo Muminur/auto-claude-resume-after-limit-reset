@@ -53,15 +53,26 @@ async function tryWeztermCli(resumeText, log) {
 
   log('debug', `Found WezTerm at: ${weztermExe}`);
 
-  // Verify wezterm CLI is accessible (daemon must be running)
-  const cliCheck = await new Promise((resolve) => {
-    execFile(weztermExe, ['cli', 'list', '--format', 'json'], { timeout: 3000 }, (err) => {
-      resolve(!err);
+  // Single call: verify CLI accessibility AND enumerate panes.
+  // Validate by parsing stdout as JSON array — exit-code alone is unreliable
+  // in MSYS2/Git Bash where wezterm cli list exits 0 even on socket failure.
+  const { available, allPanes } = await new Promise((resolve) => {
+    execFile(weztermExe, ['cli', 'list', '--format', 'json'], { timeout: 3000 }, (err, stdout) => {
+      if (err) { resolve({ available: false, allPanes: null }); return; }
+      try {
+        const parsed = JSON.parse(stdout || '');
+        if (Array.isArray(parsed)) {
+          resolve({ available: true, allPanes: parsed });
+        } else {
+          resolve({ available: false, allPanes: null });
+        }
+      } catch {
+        resolve({ available: false, allPanes: null });
+      }
     });
   });
-
-  if (!cliCheck) {
-    log('debug', 'WezTerm CLI not accessible (GUI may not be running)');
+  if (!available) {
+    log('debug', 'WezTerm CLI not accessible (GUI may not be running or socket unavailable)');
     return false;
   }
 
@@ -78,25 +89,16 @@ async function tryWeztermCli(resumeText, log) {
   // Rate limits are account-level — every Claude session needs the resume signal.
   let targets = [null]; // null = active pane (no --pane-id flag)
   try {
-    const listOut = await new Promise((resolve) => {
-      execFile(weztermExe, ['cli', 'list', '--format', 'json'], { timeout: 3000 }, (err, stdout) => {
-        resolve(err ? null : stdout);
-      });
-    });
-
-    if (listOut) {
-      const panes = JSON.parse(listOut);
-      const claudePanes = panes.filter(
-        (p) => /claude/i.test(p.title || '')
-            || /claude/i.test(p.cwd || '')
-            || /[⠀-⣿]/.test(p.title || '')  // Claude Code Braille spinner
-      );
-      if (claudePanes.length) {
-        targets = claudePanes;
-        log('debug', `Found ${claudePanes.length} Claude pane(s): ${
-          claudePanes.map((p) => `pane ${p.pane_id}`).join(', ')
-        }`);
-      }
+    const claudePanes = allPanes.filter(
+      (p) => /claude/i.test(p.title || '')
+          || /claude/i.test(p.cwd || '')
+          || /[⠀-⣿]/.test(p.title || '')  // Claude Code Braille spinner
+    );
+    if (claudePanes.length) {
+      targets = claudePanes;
+      log('debug', `Found ${claudePanes.length} Claude pane(s): ${
+        claudePanes.map((p) => `pane ${p.pane_id}`).join(', ')
+      }`);
     }
   } catch (_) { log('debug', `Failed to enumerate WezTerm panes, falling back to active pane: ${_ && _.message || _}`); }
 
