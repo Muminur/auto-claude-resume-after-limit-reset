@@ -632,6 +632,46 @@ Patterns are compiled as case-insensitive RegExp. Max length 200 chars. Nested q
 
 ## Changelog
 
+### v1.18.0 — Multi-Window Resume on Windows (2026-06-22)
+
+**Fixes: multiple Claude sessions in separate terminal windows were not resumed**
+
+When several Claude Code sessions run in separate windows — most commonly multiple
+Windows Terminal windows, which are all owned by a *single* `WindowsTerminal.exe`
+process, each with its own title — only one (or none) received the resume keystrokes
+after the rate limit lifted. Root cause was two-fold:
+
+- **fix(windows-delivery):** The old `wt -w 0 focus-tab` strategy could only address
+  the most-recently-used Windows Terminal window, then returned success and
+  short-circuited the fallback — so sessions in every other window were never reached.
+  `Get-Process` also exposes only one `MainWindowHandle` per PID, so process-walking
+  could not see the other windows of the shared process.
+- **fix(windows-delivery):** Added a **UI Automation** delivery strategy that enumerates
+  *every* top-level window, keeps those whose owning process is a terminal and whose
+  title identifies a Claude session, and focuses each by its `NativeWindowHandle`
+  (dedup by handle, not PID). This targets all windows in one pass and also covers
+  standalone PowerShell/cmd windows.
+- **fix(windows-delivery, AMSI):** The first implementation used Win32
+  `EnumWindows` + `SetForegroundWindow` + `AttachThreadInput` + `SendKeys`, which
+  Windows Defender AMSI blocks as an injector ("malicious content … blocked by your
+  antivirus software") so it never ran. Rewritten on the managed UI Automation client
+  (`AutomationElement.SetFocus`), the accessibility-sanctioned focus path, which passes
+  AMSI cleanly.
+- **fix(windows-delivery):** Claude-window detection now recognizes the **idle /
+  rate-limited** title glyph (`✳` U+2733), not just the Braille working-spinner
+  (U+2800–U+28FF). A paused-at-the-limit session shows no spinner — the exact state the
+  daemon runs in — so spinner-only detection missed it.
+- **fix(windows-delivery):** A terminal-process allowlist prevents false positives — a
+  File Explorer folder named `AutoClaudeResume` or a browser tab on claude.ai no longer
+  receives keystrokes.
+- **feat(windows-delivery):** Foreground-lock guard — after focusing a window, delivery
+  verifies the window actually holds keyboard focus before sending; unfocusable windows
+  are skipped and logged instead of firing keys blindly. A `dryRun` option enumerates
+  and logs target windows without sending anything.
+
+*Known limitation:* enumeration targets each window's focused tab; multiple Claude tabs
+within a single window are not individually addressed (logged when it applies).
+
 ### v1.17.0 — Bug Fixes: Timezone, Data Loss, Reliability (2026-05-25)
 
 **Timezone (high-impact — up to 12-hour error fixed)**

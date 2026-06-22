@@ -479,6 +479,255 @@ async function tryWindowsTerminalMultiTab(resumeText, log) {
 }
 
 /**
+ * Default heuristic that marks a terminal window title as a Claude Code session.
+ * Claude Code prefixes its terminal title with an animated status glyph + space:
+ *   - Braille glyphs (U+2800–U+28FF) while working ("⠐ codebase-audit…")
+ *   - Dingbat star glyphs (U+2700–U+27BF, e.g. ✳ U+2733) when idle / paused at
+ *     the rate limit ("✳ Schedule something") — the exact state the daemon runs in
+ *   - Math asterisk (U+2217) / middle dot (U+00B7) used by some spinner frames
+ * plus the literal word "claude" for the default "⠐ Claude Code" title.
+ *
+ * A single WindowsTerminal.exe process owns one window per Claude session, all
+ * sharing the same PID, so the window TITLE is the only per-window discriminator.
+ * Plain shell windows ("Windows PowerShell", "C:\\WINDOWS\\system32\\cmd.exe",
+ * "Grafana") start with ASCII and are excluded. Callers may override via
+ * opts.titlePattern if Claude's title format changes.
+ */
+const DEFAULT_CLAUDE_TITLE_REGEX =
+  '(?i)(^[\\u2800-\\u28FF\\u2700-\\u27BF\\u2217\\u00B7]|claude)';
+
+/**
+ * Terminal process names eligible for keystroke delivery. The process allowlist
+ * is essential: "claude" appears in unrelated window titles too (a File Explorer
+ * folder named AutoClaudeResume, a browser tab on claude.ai), and we must never
+ * fire keystrokes into those. wezterm-gui is intentionally excluded — the WezTerm
+ * CLI strategy handles WezTerm panes, so including it would double-deliver.
+ */
+const TERMINAL_PROCESS_NAMES = [
+  'WindowsTerminal', 'WindowsTerminalPreview',
+  'pwsh', 'powershell', 'cmd', 'conhost', 'mintty', 'alacritty',
+];
+
+/**
+ * Build a PowerShell script that enumerates EVERY top-level window via the UI
+ * Automation API, keeps the ones whose owning process is a terminal AND whose
+ * title identifies a Claude Code session, and (unless dry-run) focuses each by
+ * its window handle and sends the canonical resume sequence.
+ *
+ * Why UI Automation instead of Win32 EnumWindows + SetForegroundWindow:
+ *   1. Multiple Claude sessions commonly live in separate Windows Terminal
+ *      windows all owned by ONE WindowsTerminal.exe process. Get-Process exposes
+ *      a single MainWindowHandle per PID and `wt -w 0 focus-tab` only addresses
+ *      the most-recently-used window, so process-based strategies physically
+ *      reach only one of N windows. UI Automation enumerates every window and
+ *      dedup is keyed by NativeWindowHandle, not PID.
+ *   2. A Win32 EnumWindows + SetForegroundWindow + AttachThreadInput + SendKeys
+ *      script is flagged by Windows Defender AMSI as an injector ("malicious
+ *      content … blocked by your antivirus software") and never runs. The
+ *      managed UI Automation client (AutomationElement.SetFocus) is the
+ *      accessibility-sanctioned focus path and passes AMSI cleanly.
+ *
+ * Foreground-lock safety: SendKeys lands in whatever window currently holds
+ * keyboard focus. After SetFocus we VERIFY that FocusedElement's top-level
+ * ancestor is our target window before sending; mismatches are skipped and
+ * logged rather than firing keys blindly.
+ *
+ * Machine-readable output (one per line) parsed by the JS wrapper:
+ *   RESUME-TARGET:<hwnd>\t<pid>\t<proc>\t<title>     (dry-run: candidate only)
+ *   RESUME-DELIVERED:<hwnd>\t<title>                 (keys sent)
+ *   RESUME-SKIPPED:<hwnd>\t<reason>\t<title>         (could not focus)
+ *   RESUME-SUMMARY:delivered=<n> skipped=<n> total=<n>
+ *
+ * @param {string} resumeText
+ * @param {Object} [opts]
+ * @param {boolean} [opts.dryRun=false] - enumerate + log targets, send nothing
+ * @param {string} [opts.titlePattern] - .NET regex overriding the Claude title heuristic
+ * @returns {string} PowerShell script content
+ */
+function buildWindowEnumScript(resumeText, opts = {}) {
+  const dryRun = !!opts.dryRun;
+  const escapedText = resumeText.replace(/'/g, "''");
+  const keystrokeBlock = buildResumeKeystrokeBlock(escapedText);
+  const titleRegex = (opts.titlePattern || DEFAULT_CLAUDE_TITLE_REGEX).replace(/'/g, "''");
+  const termList = TERMINAL_PROCESS_NAMES.map((n) => `'${n}'`).join(', ');
+
+  return `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+
+$claudeRegex = '${titleRegex}'
+$termProcs = @(${termList})
+$myPid = $PID
+$dryRun = $${dryRun ? 'true' : 'false'}
+
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
+$wins = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)
+
+$procName = @{}
+function Get-PName {
+    param([int]$Id)
+    if ($procName.ContainsKey($Id)) { return $procName[$Id] }
+    $n = (Get-Process -Id $Id -ErrorAction SilentlyContinue).Name
+    if (-not $n) { $n = '' }
+    $procName[$Id] = $n
+    return $n
+}
+
+$targets = @()
+$seen = @{}
+foreach ($w in $wins) {
+    try {
+        $title = $w.Current.Name
+        if ([string]::IsNullOrWhiteSpace($title)) { continue }
+        $wpid = [int]$w.Current.ProcessId
+        if ($wpid -eq $myPid) { continue }
+        $h = [long]$w.Current.NativeWindowHandle
+        if ($h -eq 0 -or $seen.ContainsKey($h)) { continue }
+        $pname = Get-PName -Id $wpid
+        if ($termProcs -notcontains $pname) { continue }
+        if ($title -notmatch $claudeRegex) { continue }
+        $seen[$h] = $true
+        $targets += [PSCustomObject]@{ El = $w; Hwnd = $h; Pid = $wpid; Name = $pname; Title = $title }
+    } catch {}
+}
+
+if ($targets.Count -eq 0) {
+    Write-Output "RESUME-SUMMARY:delivered=0 skipped=0 total=0"
+    exit 0
+}
+
+# Focus a window via the accessibility API, then confirm it actually holds focus
+# before any keystroke is sent (foreground-lock guard).
+function Focus-Verified {
+    param($El, [long]$Hwnd)
+    try { $El.SetFocus() } catch { return $false }
+    Start-Sleep -Milliseconds 350
+    try {
+        $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+        $top = [System.Windows.Automation.AutomationElement]::FocusedElement
+        while ($top -ne $null) {
+            $parent = $walker.GetParent($top)
+            if ($parent -eq $null -or $parent -eq $root) { break }
+            $top = $parent
+        }
+        $fh = if ($top -ne $null) { [long]$top.Current.NativeWindowHandle } else { 0 }
+        return ($fh -eq $Hwnd)
+    } catch { return $false }
+}
+
+$delivered = 0
+$skipped = 0
+foreach ($t in $targets) {
+    if ($dryRun) {
+        Write-Output "RESUME-TARGET:$($t.Hwnd)\`t$($t.Pid)\`t$($t.Name)\`t$($t.Title)"
+        continue
+    }
+    $ok = Focus-Verified -El $t.El -Hwnd $t.Hwnd
+    if (-not $ok) {
+        Start-Sleep -Milliseconds 200
+        $ok = Focus-Verified -El $t.El -Hwnd $t.Hwnd
+    }
+    if (-not $ok) {
+        $skipped++
+        Write-Output "RESUME-SKIPPED:$($t.Hwnd)\`tfocus-denied\`t$($t.Title)"
+        continue
+    }
+    Start-Sleep -Milliseconds 200
+${keystrokeBlock}
+    $delivered++
+    Write-Output "RESUME-DELIVERED:$($t.Hwnd)\`t$($t.Title)"
+    Start-Sleep -Milliseconds 300
+}
+
+Write-Output "RESUME-SUMMARY:delivered=$delivered skipped=$skipped total=$($targets.Count)"
+`.trim();
+}
+
+/**
+ * Try HWND-enumeration delivery: target every Claude Code window by its window
+ * handle. Resolves the multi-window gap that process-based strategies cannot —
+ * multiple Windows Terminal windows owned by a single WindowsTerminal.exe, plus
+ * standalone PowerShell/cmd windows — in one pass.
+ *
+ * @param {string} resumeText
+ * @param {Function} log
+ * @param {Object} [opts]
+ * @param {boolean} [opts.dryRun=false]
+ * @param {string} [opts.titlePattern]
+ * @returns {Promise<{delivered:number, skipped:number, total:number, targets:Array}>}
+ */
+async function tryWindowEnumeration(resumeText, log, opts = {}) {
+  const dryRun = !!opts.dryRun;
+  const tempScript = path.join(
+    os.tmpdir(),
+    `claude-auto-resume-winenum-${process.pid}.ps1`
+  );
+
+  try {
+    fs.writeFileSync(tempScript, buildWindowEnumScript(resumeText, opts), 'utf8');
+  } catch (err) {
+    log('error', `Failed to write window-enum script: ${err.message}`);
+    return { delivered: 0, skipped: 0, total: 0, targets: [] };
+  }
+
+  return new Promise((resolve) => {
+    execFile(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tempScript],
+      { timeout: 90000 },
+      (error, stdout, stderr) => {
+        try { fs.unlinkSync(tempScript); } catch (_) { log('debug', `Failed to remove temp script ${tempScript}: ${_ && _.message || _}`); }
+
+        const out = stdout || '';
+        const targets = [];
+        let delivered = 0;
+        let skipped = 0;
+        let total = 0;
+
+        for (const line of out.split(/\r?\n/)) {
+          const t = line.trim();
+          if (t.startsWith('RESUME-TARGET:')) {
+            const [hwnd, pid, proc, ...titleParts] = t.slice('RESUME-TARGET:'.length).split('\t');
+            targets.push({ hwnd, pid, proc, title: titleParts.join('\t') });
+            log('info', `[dry-run] Claude window: "${truncate(titleParts.join('\t'), 60)}" (hwnd ${hwnd}, ${proc} PID ${pid})`);
+          } else if (t.startsWith('RESUME-DELIVERED:')) {
+            const [hwnd, ...titleParts] = t.slice('RESUME-DELIVERED:'.length).split('\t');
+            log('success', `Delivered resume to window "${truncate(titleParts.join('\t'), 60)}" (hwnd ${hwnd})`);
+          } else if (t.startsWith('RESUME-SKIPPED:')) {
+            const [hwnd, reason, ...titleParts] = t.slice('RESUME-SKIPPED:'.length).split('\t');
+            log('warning', `Skipped window "${truncate(titleParts.join('\t'), 60)}" (hwnd ${hwnd}): ${reason}`);
+          } else if (t.startsWith('RESUME-SUMMARY:')) {
+            const m = /delivered=(\d+) skipped=(\d+) total=(\d+)/.exec(t);
+            if (m) { delivered = +m[1]; skipped = +m[2]; total = +m[3]; }
+          }
+        }
+
+        if (error && !/RESUME-SUMMARY:/.test(out)) {
+          log('warning', `Window-enum delivery failed: ${error.message}`);
+          if (stderr) log('debug', `stderr: ${stderr.trim()}`);
+          return resolve({ delivered: 0, skipped: 0, total: targets.length, targets });
+        }
+
+        if (dryRun) {
+          log('info', `[dry-run] ${targets.length} Claude window(s) would be targeted`);
+        } else if (total === 0) {
+          log('debug', 'No Claude windows found via HWND enumeration');
+        } else {
+          log('info', `HWND enumeration: delivered=${delivered} skipped=${skipped} total=${total}`);
+          if (skipped > 0) {
+            log('warning', `${skipped} window(s) could not be focused (foreground lock). Note: HWND enumeration reaches each window's focused tab only — multiple Claude tabs within one window are not individually addressed.`);
+          }
+        }
+
+        resolve({ delivered, skipped, total, targets });
+      }
+    );
+  });
+}
+
+/**
  * Send resume keystrokes on Windows using a targeted PowerShell script.
  * Falls back through three strategies: process-PID, window-title, foreground.
  *
@@ -521,25 +770,50 @@ async function tryPowerShellKeystroke(resumeText, log) {
  * Deliver resume keystrokes to the Claude Code terminal on Windows.
  *
  * Tries in order:
- *   1. WezTerm CLI                — direct pane injection, no focus needed
- *   2. Windows Terminal multi-tab — wt.exe focus-tab + SendKeys per tab
- *   3. PowerShell SendKeys        — find + activate terminal window, send once
+ *   1. WezTerm CLI          — direct pane injection, no focus needed
+ *   2. HWND enumeration     — target EVERY Claude window by its window handle,
+ *                             covering multiple Windows Terminal windows (one
+ *                             WindowsTerminal.exe owns many windows) and
+ *                             standalone PowerShell/cmd windows in a single pass.
+ *   3. PowerShell SendKeys  — legacy process-walk fallback, ONLY when (1) and (2)
+ *                             reached nothing (avoids double-delivery).
+ *
+ * HWND enumeration replaces the old `wt -w 0 focus-tab` multi-tab strategy, which
+ * could address only the most-recently-used Windows Terminal window and then
+ * short-circuited the standalone-window fallback.
  *
  * @param {Object} opts
  * @param {string} [opts.resumeText='continue']
  * @param {Function} [opts.log]
  * @param {string[]} [opts.skipTiers=[]] - Tier names to skip (e.g. on retry escalation)
- * @returns {Promise<{success: boolean, method: string|null, error: string|null}>}
+ * @param {boolean} [opts.dryRun=false] - enumerate + log target windows, send nothing
+ * @param {string} [opts.titlePattern] - override the Claude window-title heuristic
+ * @returns {Promise<{success: boolean, method: string|null, error: string|null, targets?: Array}>}
  */
 async function deliverResumeWindows(opts = {}) {
   const resumeText = opts.resumeText || 'continue';
   const log = opts.log || (() => {});
   const skipTiers = opts.skipTiers || [];
+  const dryRun = !!opts.dryRun;
+  const titlePattern = opts.titlePattern;
+
+  // Dry-run: only enumerate Claude windows and report them. Never sends keys —
+  // this is the safe way to validate targeting without disturbing live sessions.
+  if (dryRun) {
+    const res = await tryWindowEnumeration(resumeText, log, { dryRun: true, titlePattern });
+    return {
+      success: res.targets.length > 0,
+      method: 'window-enum-dryrun',
+      error: res.targets.length > 0 ? null : 'No Claude windows found',
+      targets: res.targets,
+    };
+  }
 
   let anySuccess = false;
+  let reachedAnyWindow = false;
   const methods = [];
 
-  // Strategy 1: WezTerm CLI — always run; handles WezTerm panes independently of WT.
+  // Strategy 1: WezTerm CLI — always run; handles WezTerm panes independently.
   // Rate limits are account-level so all terminal types need the resume signal.
   if (!skipTiers.includes('wezterm-cli')) {
     try {
@@ -552,21 +826,26 @@ async function deliverResumeWindows(opts = {}) {
     log('debug', 'Skipping WezTerm CLI (tier escalation)');
   }
 
-  // Strategy 2: Windows Terminal multi-tab — always run independently of WezTerm.
-  if (!skipTiers.includes('wt-multi-tab')) {
+  // Strategy 2: HWND enumeration — always run; targets every Claude window by
+  // handle. This is the primary multi-instance path (multiple WT windows + any
+  // standalone shell windows). wezterm-gui windows are excluded inside the
+  // script so they are not double-delivered alongside the WezTerm CLI pass.
+  if (!skipTiers.includes('window-enum')) {
     try {
-      const ok = await tryWindowsTerminalMultiTab(resumeText, log);
-      if (ok) { anySuccess = true; methods.push('wt-multi-tab'); }
+      const res = await tryWindowEnumeration(resumeText, log, { titlePattern });
+      if (res.total > 0) reachedAnyWindow = true;
+      if (res.delivered > 0) { anySuccess = true; methods.push('window-enum'); }
     } catch (err) {
-      log('debug', `WT multi-tab error: ${err.message}`);
+      log('debug', `Window-enum error: ${err.message}`);
     }
   } else {
-    log('debug', 'Skipping Windows Terminal multi-tab (tier escalation)');
+    log('debug', 'Skipping HWND enumeration (tier escalation)');
   }
 
-  // Strategy 3: PowerShell keystroke fallback — only when neither terminal-specific
-  // strategy worked (i.e. Claude is in a standalone pwsh/cmd window).
-  if (!anySuccess) {
+  // Strategy 3: legacy PowerShell process-walk — ONLY when nothing was delivered
+  // AND enumeration saw no Claude windows at all. Prevents double-delivery while
+  // preserving coverage for edge cases the title heuristic misses.
+  if (!anySuccess && !reachedAnyWindow) {
     try {
       const ok = await tryPowerShellKeystroke(resumeText, log);
       if (ok) { anySuccess = true; methods.push('powershell-sendkeys'); }
@@ -591,9 +870,13 @@ module.exports = {
   tryWeztermCli,
   tryPowerShellKeystroke,
   tryWindowsTerminalMultiTab,
+  tryWindowEnumeration,
   findWeztermExe,
   findWtExe,
   buildResumeKeystrokeBlock,
   buildMultiTabScript,
   buildWindowsKeystrokeScript,
+  buildWindowEnumScript,
+  DEFAULT_CLAUDE_TITLE_REGEX,
+  TERMINAL_PROCESS_NAMES,
 };

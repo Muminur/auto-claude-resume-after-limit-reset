@@ -99,15 +99,17 @@ describe('tryWindowsTerminalMultiTab', () => {
 });
 
 describe('deliverResumeWindows orchestrator', () => {
-  it('exposes a method-tagged result for wt-multi-tab', () => {
-    // Smoke test that the orchestrator exists and the new method tag is wired
+  it('wires HWND window-enumeration as the primary multi-window method', () => {
+    // wt-multi-tab was replaced by window-enum: `wt -w 0 focus-tab` could only
+    // reach the most-recently-used Windows Terminal window, leaving sessions in
+    // other windows unresumed. Window enumeration targets every window by handle.
     const m = require('../../src/delivery/windows-delivery');
     expect(typeof m.deliverResumeWindows).toBe('function');
-    // Source contains the new method label
+    expect(typeof m.tryWindowEnumeration).toBe('function');
     const src = require('fs').readFileSync(
       require('path').join(__dirname, '..', '..', 'src', 'delivery', 'windows-delivery.js'),
       'utf8'
     );
-    expect(src).toContain("'wt-multi-tab'");
+    expect(src).toContain("methods.push('window-enum')");
   });
 });
