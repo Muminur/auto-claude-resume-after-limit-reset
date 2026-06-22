@@ -243,6 +243,19 @@ tries each tier in order and falls back to the next on failure.
 └──────────────────────────────────────────────────────────┘
 ```
 
+**Windows native delivery** (`src/delivery/windows-delivery.js`) expands the
+Tier-3 step into its own ordered set: (1) WezTerm CLI `send-text`, then (2) **UI
+Automation window enumeration** — every Claude window is located and resumed by
+its window handle, so multiple sessions across separate Windows Terminal windows
+(all owned by one `WindowsTerminal.exe`) are each delivered to. It uses the
+managed `AutomationElement.SetFocus` path (Win32 `SetForegroundWindow` + SendKeys
+is blocked by Defender AMSI), detects Claude windows by their title status glyph
+(working Braille spinner or idle `✳`), restricts to terminal processes, and
+verifies focus before sending (fail-closed). A legacy process-tree SendKeys pass
+(3) runs only if enumeration finds no windows. Keystroke delivery cannot occur
+while the workstation is locked (the Windows secure desktop blocks simulated
+input); the daemon retries after unlock.
+
 ### 7. Active Verification
 
 After delivery, the daemon verifies that the resume actually took effect

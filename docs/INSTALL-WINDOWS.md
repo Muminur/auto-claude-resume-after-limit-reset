@@ -4,15 +4,19 @@ Complete guide for installing Auto Claude Resume on Windows 10/11.
 
 ## Windows Delivery Tiers
 
-The daemon tries three strategies in order, falling through to the next if the current one is unavailable:
+The daemon tries these strategies in order, falling through to the next if the current one is unavailable:
 
 | Tier | Method | Requires focus? | Notes |
 |------|--------|----------------|-------|
 | **1** | WezTerm CLI (`wezterm cli send-text`) | No | Injects bytes directly into every Claude pane. Detects panes by title/cwd or Braille spinner characters. |
-| **2** | Windows Terminal multi-tab (`wt.exe focus-tab`) | Yes | Iterates every tab; estimates tab count from `claude.exe` descendants. Auto-restores minimized windows. |
-| **3** | PowerShell SendKeys + process-tree targeting | Yes | Walks from `node.exe`/`claude.exe` up the tree to activate the correct terminal window. Auto-restores minimized windows via `ShowWindow(SW_RESTORE)`. |
+| **2** | UI Automation window enumeration | Yes | Enumerates **every** top-level window and delivers to **each** Claude window by its window handle — so multiple Claude sessions in separate Windows Terminal windows (all owned by one `WindowsTerminal.exe`) and standalone PowerShell/CMD windows are all resumed. Detects Claude windows by their title status glyph (working Braille spinner *or* the idle/rate-limited `✳` glyph) and only targets terminal processes. Verifies a window holds focus before sending (fail-closed). |
+| **3** | PowerShell SendKeys + process-tree targeting | Yes | Legacy best-effort fallback used only when Tier 2 finds no windows. Walks from `node.exe`/`claude.exe` up the tree to activate the hosting terminal. |
 
-Tier 1 (Linux/macOS equivalents tmux and PTY) are not available on Windows; the daemon skips them automatically. No manual configuration is needed — just install WezTerm if you want Tier 1.
+Tier 2 uses the managed UI Automation API (`AutomationElement.SetFocus`) rather than Win32 `SetForegroundWindow`, which Windows Defender AMSI blocks as an injector. It supersedes the older single-window `wt.exe focus-tab` approach that could reach only one Windows Terminal window.
+
+The Linux/macOS tiers (tmux and PTY) are not available on Windows; the daemon skips them automatically. No manual configuration is needed — just install WezTerm if you want Tier 1.
+
+> **Note:** keystroke delivery cannot work while the workstation is **locked** (the Windows secure desktop blocks all simulated input). If you lock your machine while rate-limited, the resume is delivered once you unlock and the daemon retries.
 
 ## Prerequisites
 
@@ -326,7 +330,10 @@ If not present, re-run `install.ps1` from the repo directory.
 The daemon sends keystrokes to terminal windows. Ensure:
 1. Claude Code is running in a terminal window (Windows Terminal, PowerShell, CMD)
 2. The terminal window is not minimized
-3. Try running PowerShell as Administrator
+3. **The workstation is unlocked** — Windows blocks all simulated keystrokes at the lock screen, so delivery only succeeds once you unlock (the daemon retries)
+4. Try running PowerShell as Administrator
+
+> Multiple Claude sessions across several terminal windows are all resumed (each window is targeted by its window handle). If only some windows resume, confirm each one's title shows a Claude status glyph (the Braille spinner or the idle `✳`).
 
 ### Dashboard Not Accessible
 
