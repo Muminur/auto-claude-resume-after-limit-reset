@@ -78,6 +78,35 @@ function installMissingDeps(dir, deps) {
   }
 }
 
+/**
+ * Order directory entries so that the HIGHEST semver version directory is visited
+ * first. The plugin cache can hold several extracted versions side by side
+ * (e.g. 1.16.3 and 1.19.0); without this, a depth-first search returns the first
+ * (alphabetically lowest) version, so an old cached build permanently shadows the
+ * newly installed one and updates never take effect.
+ *
+ * @param {Array<{name:string}>} entries - fs.readdirSync(..., {withFileTypes:true})
+ * @returns {Array} the same array, sorted in place (versions descending, first)
+ */
+function sortEntriesPreferLatest(entries) {
+  const parse = (name) => {
+    const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(name));
+    return m ? [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)] : null;
+  };
+  entries.sort((a, b) => {
+    const va = parse(a.name);
+    const vb = parse(b.name);
+    if (va && vb) {
+      for (let i = 0; i < 3; i++) { if (va[i] !== vb[i]) return vb[i] - va[i]; }
+      return 0;
+    }
+    if (va) return -1; // version dirs before non-version dirs
+    if (vb) return 1;
+    return String(a.name).localeCompare(String(b.name));
+  });
+  return entries;
+}
+
 // Find daemon path - check plugin location first, then manual install location
 function findDaemonPath() {
   // Check if running from plugin (CLAUDE_PLUGIN_ROOT is set)
@@ -99,7 +128,7 @@ function findDaemonPath() {
   if (fs.existsSync(pluginCache)) {
     try {
       const findDaemon = (dir) => {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        const entries = sortEntriesPreferLatest(fs.readdirSync(dir, { withFileTypes: true }));
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
           if (entry.isDirectory()) {
@@ -290,7 +319,7 @@ function ensureStopHookRegistered() {
         const findHook = (dir, depth = 0) => {
           if (depth > 5) return null;
           try {
-            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            const entries = sortEntriesPreferLatest(fs.readdirSync(dir, { withFileTypes: true }));
             for (const entry of entries) {
               const fullPath = path.join(dir, entry.name);
               if (entry.isDirectory()) {
@@ -434,6 +463,7 @@ if (require.main === module) {
 
 // Export functions for testing
 module.exports = {
+  sortEntriesPreferLatest,
   findDaemonPath,
   isDaemonRunning,
   isDaemonHeartbeatFresh,

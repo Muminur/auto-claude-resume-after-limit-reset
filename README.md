@@ -632,6 +632,23 @@ Patterns are compiled as case-insensitive RegExp. Max length 200 chars. Nested q
 
 ## Changelog
 
+### v1.20.0 — Fix: stale daemon version shadowed all updates (2026-06-22)
+
+**The real reason earlier fixes appeared to do nothing: the daemon kept running an old cached version.**
+
+The plugin cache can hold several extracted versions side by side (e.g. `1.16.3` and
+`1.19.0`). The daemon/hook resolver (`ensure-daemon-running.js`) did a depth-first
+search and returned the **first** `auto-resume-daemon.js` it found — and because
+directory listings are alphabetical, `1.16.3` sorts before `1.19.0`, so the launcher
+always started the **oldest** cached build. New versions installed fine but never ran.
+
+- **fix(ensure-daemon):** `findDaemonPath` and the hook resolver now sort version
+  directories with `sortEntriesPreferLatest()` and pick the **highest semver** version,
+  so the newest installed build is the one that launches.
+
+> If you were stuck on an old version: after updating, restart the daemon
+> (`/auto-resume:stop` then `/auto-resume:start`) once so the fixed resolver takes over.
+
 ### v1.19.0 — Lock-Independent Resume on Windows via Console Injection (2026-06-22)
 
 **Fixes: `continue` was never reliably delivered on Windows — including when the workstation is locked**
