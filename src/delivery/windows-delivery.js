@@ -2,6 +2,7 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { deliverResumeViaConsole, discoverClaudeConsolePids } = require('./console-inject');
 
 /**
  * Locate the wezterm executable on Windows.
@@ -767,94 +768,111 @@ async function tryPowerShellKeystroke(resumeText, log) {
 }
 
 /**
- * Deliver resume keystrokes to the Claude Code terminal on Windows.
+ * Deliver the resume sequence to every Claude Code session on Windows.
  *
- * Tries in order:
- *   1. WezTerm CLI          — direct pane injection, no focus needed
- *   2. HWND enumeration     — target EVERY Claude window by its window handle,
- *                             covering multiple Windows Terminal windows (one
- *                             WindowsTerminal.exe owns many windows) and
- *                             standalone PowerShell/cmd windows in a single pass.
- *   3. PowerShell SendKeys  — legacy process-walk fallback, ONLY when (1) and (2)
- *                             reached nothing (avoids double-delivery).
+ * PRIMARY: console-input injection (AttachConsole + WriteConsoleInput) into each
+ * Claude session's console buffer. This is the only path that works from the
+ * detached daemon — it needs no window focus (a background process cannot steal
+ * foreground, locked OR unlocked), it is lock-independent by construction (the
+ * console API never touches the secure desktop), it reaches every Windows
+ * Terminal ConPTY session, and it is AMSI-clean. See `console-inject.js`.
  *
- * HWND enumeration replaces the old `wt -w 0 focus-tab` multi-tab strategy, which
- * could address only the most-recently-used Windows Terminal window and then
- * short-circuited the standalone-window fallback.
+ * FALLBACK (only when injection delivered to ZERO sessions — e.g. no Claude PID
+ * found, or a terminal not backed by a Windows console): WezTerm CLI, then HWND
+ * window enumeration, then the legacy process-walk SendKeys. These run only as a
+ * fallback because WezTerm/WT are also ConPTY-backed, so running them alongside
+ * console injection would deliver `continue` twice into the same session.
  *
  * @param {Object} opts
  * @param {string} [opts.resumeText='continue']
+ * @param {string} [opts.menuSelection='1']
  * @param {Function} [opts.log]
  * @param {string[]} [opts.skipTiers=[]] - Tier names to skip (e.g. on retry escalation)
- * @param {boolean} [opts.dryRun=false] - enumerate + log target windows, send nothing
- * @param {string} [opts.titlePattern] - override the Claude window-title heuristic
+ * @param {boolean} [opts.dryRun=false] - discover + log target sessions, send nothing
+ * @param {string} [opts.titlePattern] - override the Claude window-title heuristic (fallback path)
  * @returns {Promise<{success: boolean, method: string|null, error: string|null, targets?: Array}>}
  */
 async function deliverResumeWindows(opts = {}) {
   const resumeText = opts.resumeText || 'continue';
+  const menuSelection = opts.menuSelection || '1';
   const log = opts.log || (() => {});
   const skipTiers = opts.skipTiers || [];
   const dryRun = !!opts.dryRun;
   const titlePattern = opts.titlePattern;
 
-  // Dry-run: only enumerate Claude windows and report them. Never sends keys —
-  // this is the safe way to validate targeting without disturbing live sessions.
+  // Dry-run: report the Claude sessions that WOULD receive injection (plus the
+  // windows the GUI fallback would target). Never sends anything — the safe way
+  // to validate targeting without disturbing live sessions.
   if (dryRun) {
-    const res = await tryWindowEnumeration(resumeText, log, { dryRun: true, titlePattern });
+    const consoleTargets = await discoverClaudeConsolePids(log);
+    const win = await tryWindowEnumeration(resumeText, log, { dryRun: true, titlePattern });
+    consoleTargets.forEach((t) =>
+      log('info', `[dry-run] Claude session: PID ${t.pid} (${t.name})`));
+    const total = consoleTargets.length + win.targets.length;
     return {
-      success: res.targets.length > 0,
-      method: 'window-enum-dryrun',
-      error: res.targets.length > 0 ? null : 'No Claude windows found',
-      targets: res.targets,
+      success: total > 0,
+      method: 'dryrun',
+      error: total > 0 ? null : 'No Claude sessions found',
+      targets: consoleTargets.map((t) => ({ pid: t.pid, name: t.name, kind: 'console' }))
+        .concat(win.targets.map((t) => ({ ...t, kind: 'window' }))),
     };
   }
 
-  let anySuccess = false;
-  let reachedAnyWindow = false;
   const methods = [];
 
-  // Strategy 1: WezTerm CLI — always run; handles WezTerm panes independently.
-  // Rate limits are account-level so all terminal types need the resume signal.
+  // PRIMARY: console-input injection into every Claude session.
+  if (!skipTiers.includes('console-inject')) {
+    try {
+      const res = await deliverResumeViaConsole({ resumeText, menuSelection, log });
+      if (res.delivered > 0) {
+        return {
+          success: true,
+          method: `console-inject(${res.delivered}/${res.total})`,
+          error: null,
+        };
+      }
+      log('debug', 'Console injection delivered to 0 sessions; trying GUI fallback');
+    } catch (err) {
+      log('debug', `Console injection error: ${err.message}`);
+    }
+  } else {
+    log('debug', 'Skipping console injection (tier escalation)');
+  }
+
+  // FALLBACK 1: WezTerm CLI (only reached if console injection delivered nothing).
   if (!skipTiers.includes('wezterm-cli')) {
     try {
       const ok = await tryWeztermCli(resumeText, log);
-      if (ok) { anySuccess = true; methods.push('wezterm-cli'); }
+      if (ok) methods.push('wezterm-cli');
     } catch (err) {
       log('debug', `WezTerm CLI error: ${err.message}`);
     }
-  } else {
-    log('debug', 'Skipping WezTerm CLI (tier escalation)');
   }
 
-  // Strategy 2: HWND enumeration — always run; targets every Claude window by
-  // handle. This is the primary multi-instance path (multiple WT windows + any
-  // standalone shell windows). wezterm-gui windows are excluded inside the
-  // script so they are not double-delivered alongside the WezTerm CLI pass.
+  // FALLBACK 2: HWND window enumeration (focus-based; works only when the caller
+  // already holds foreground — generally not the daemon, hence fallback-only).
+  let reachedAnyWindow = false;
   if (!skipTiers.includes('window-enum')) {
     try {
       const res = await tryWindowEnumeration(resumeText, log, { titlePattern });
       if (res.total > 0) reachedAnyWindow = true;
-      if (res.delivered > 0) { anySuccess = true; methods.push('window-enum'); }
+      if (res.delivered > 0) methods.push('window-enum');
     } catch (err) {
       log('debug', `Window-enum error: ${err.message}`);
     }
-  } else {
-    log('debug', 'Skipping HWND enumeration (tier escalation)');
   }
 
-  // Strategy 3: legacy PowerShell process-walk — ONLY when nothing was delivered
-  // AND enumeration saw no Claude windows at all. Prevents double-delivery while
-  // preserving coverage for edge cases the title heuristic misses.
-  if (!anySuccess && !reachedAnyWindow) {
+  // FALLBACK 3: legacy process-walk SendKeys — only when nothing else reached a window.
+  if (!methods.length && !reachedAnyWindow) {
     try {
       const ok = await tryPowerShellKeystroke(resumeText, log);
-      if (ok) { anySuccess = true; methods.push('powershell-sendkeys'); }
+      if (ok) methods.push('powershell-sendkeys');
     } catch (err) {
       log('debug', `PowerShell keystroke error: ${err.message}`);
     }
   }
 
-  if (anySuccess) {
+  if (methods.length) {
     return { success: true, method: methods.join('+'), error: null };
   }
 

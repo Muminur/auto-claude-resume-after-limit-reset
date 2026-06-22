@@ -73,7 +73,7 @@ try {
 
 let metricsServer = null;
 
-const VERSION = '1.18.0';
+const VERSION = '1.19.0';
 const HOME_DIR = os.homedir();
 const BASE_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
 const STATUS_FILE = path.join(BASE_DIR, 'status.json');

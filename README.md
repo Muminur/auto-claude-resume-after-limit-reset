@@ -632,6 +632,38 @@ Patterns are compiled as case-insensitive RegExp. Max length 200 chars. Nested q
 
 ## Changelog
 
+### v1.19.0 — Lock-Independent Resume on Windows via Console Injection (2026-06-22)
+
+**Fixes: `continue` was never reliably delivered on Windows — including when the workstation is locked**
+
+v1.18.0 targeted the right windows but delivered via GUI `SendKeys`, which requires
+stealing window focus. A **background process — which the daemon is — cannot steal
+foreground** on Windows (foreground-lock), *whether the workstation is locked or
+unlocked*. So GUI delivery from the daemon was effectively never working; it only
+appeared to when the caller already held foreground.
+
+- **feat(console-inject):** New primary Windows delivery path that injects the resume
+  sequence straight into each Claude session's **console input buffer** via the Win32
+  console API (`AttachConsole` + `WriteConsoleInput`). This:
+  - **works from the detached daemon** — no window focus / foreground required;
+  - is **lock-independent by construction** — the console API never touches the
+    secure desktop, so delivery works while the workstation is **locked**;
+  - **reaches every Windows Terminal session** — each ConPTY tab/window is targeted
+    by PID, so all sessions resume (verified end-to-end against a real `claude.exe`,
+    whose injected prompt appeared in Claude's transcript);
+  - is **AMSI-clean** — unlike `SetForegroundWindow`+`SendKeys`, which Defender blocks.
+- **fix(windows-delivery):** Console injection is now the single primary path. WezTerm
+  CLI and the v1.18.0 HWND window-enumeration run only as a fallback when injection
+  delivers to zero sessions — preventing the double-delivery that would otherwise occur
+  (WezTerm and Windows Terminal are also ConPTY-backed).
+- **fix(console-inject):** Session targeting is restricted to Claude session roots
+  (`claude.exe` and node-hosted Claude CLIs); plugin/MCP node children (which share the
+  session console) and the daemon itself are excluded, so `continue` is delivered once
+  per session and never into unrelated processes.
+
+> Injection lands in whatever process currently owns the console input. At the
+> rate-limit prompt Claude is idle and owns it, so production delivery is reliable.
+
 ### v1.18.0 — Multi-Window Resume on Windows (2026-06-22)
 
 **Fixes: multiple Claude sessions in separate terminal windows were not resumed**

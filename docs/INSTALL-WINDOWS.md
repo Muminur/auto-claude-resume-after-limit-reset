@@ -4,19 +4,18 @@ Complete guide for installing Auto Claude Resume on Windows 10/11.
 
 ## Windows Delivery Tiers
 
-The daemon tries these strategies in order, falling through to the next if the current one is unavailable:
+The daemon delivers via console-input injection first, falling back to the GUI strategies only if that reaches no sessions:
 
-| Tier | Method | Requires focus? | Notes |
-|------|--------|----------------|-------|
-| **1** | WezTerm CLI (`wezterm cli send-text`) | No | Injects bytes directly into every Claude pane. Detects panes by title/cwd or Braille spinner characters. |
-| **2** | UI Automation window enumeration | Yes | Enumerates **every** top-level window and delivers to **each** Claude window by its window handle — so multiple Claude sessions in separate Windows Terminal windows (all owned by one `WindowsTerminal.exe`) and standalone PowerShell/CMD windows are all resumed. Detects Claude windows by their title status glyph (working Braille spinner *or* the idle/rate-limited `✳` glyph) and only targets terminal processes. Verifies a window holds focus before sending (fail-closed). |
-| **3** | PowerShell SendKeys + process-tree targeting | Yes | Legacy best-effort fallback used only when Tier 2 finds no windows. Walks from `node.exe`/`claude.exe` up the tree to activate the hosting terminal. |
+| Tier | Method | Needs focus? | Works locked? | Notes |
+|------|--------|--------------|---------------|-------|
+| **1 (primary)** | Console-input injection (`AttachConsole` + `WriteConsoleInput`) | No | **Yes** | Injects the resume sequence straight into **each** Claude session's console buffer, by PID. Works from the detached daemon with no window focus, reaches every Windows Terminal ConPTY session, and is AMSI-clean. Targets only Claude session roots (`claude.exe` / node-hosted Claude CLIs); plugin and MCP child processes are excluded so `continue` is delivered exactly once per session. |
+| **2 (fallback)** | WezTerm CLI (`wezterm cli send-text`) | No | Yes (WezTerm only) | Used only if Tier 1 delivers to zero sessions. Injects into WezTerm panes via its CLI socket. |
+| **3 (fallback)** | UI Automation window enumeration | Yes | No | Used only if Tier 1 delivers to zero sessions. Focuses each Claude window by handle and sends keystrokes — but a background process generally cannot steal focus, so this rarely succeeds from the daemon. |
+| **4 (fallback)** | Process-tree SendKeys | Yes | No | Last-resort legacy path. |
 
-Tier 2 uses the managed UI Automation API (`AutomationElement.SetFocus`) rather than Win32 `SetForegroundWindow`, which Windows Defender AMSI blocks as an injector. It supersedes the older single-window `wt.exe focus-tab` approach that could reach only one Windows Terminal window.
+Tier 1 is the path that actually works from the daemon: GUI `SendKeys` requires stealing window focus, which Windows denies to a background process (foreground-lock) **whether the workstation is locked or unlocked**. Console-input injection bypasses the GUI entirely, so it delivers from the background daemon and — because the console API never touches the secure desktop — **continues to work while the workstation is locked**.
 
-The Linux/macOS tiers (tmux and PTY) are not available on Windows; the daemon skips them automatically. No manual configuration is needed — just install WezTerm if you want Tier 1.
-
-> **Note:** keystroke delivery cannot work while the workstation is **locked** (the Windows secure desktop blocks all simulated input). If you lock your machine while rate-limited, the resume is delivered once you unlock and the daemon retries.
+The Linux/macOS tiers (tmux and PTY) are not available on Windows; the daemon skips them automatically. No manual configuration is needed.
 
 ## Prerequisites
 
@@ -327,13 +326,17 @@ If not present, re-run `install.ps1` from the repo directory.
 
 ### Keystrokes Not Being Sent
 
-The daemon sends keystrokes to terminal windows. Ensure:
-1. Claude Code is running in a terminal window (Windows Terminal, PowerShell, CMD)
-2. The terminal window is not minimized
-3. **The workstation is unlocked** — Windows blocks all simulated keystrokes at the lock screen, so delivery only succeeds once you unlock (the daemon retries)
-4. Try running PowerShell as Administrator
+The daemon injects the resume sequence into each Claude session's console (Tier 1),
+which does not need window focus and works whether the workstation is locked or not.
+If a session is not resumed, ensure:
+1. Claude Code is running as `claude.exe` or a node-hosted Claude CLI (the daemon
+   targets Claude session roots by PID)
+2. The session is sitting at the rate-limit prompt (idle), so Claude — not a child
+   shell spawned mid-tool-call — currently owns the console input
+3. The daemon is running (`/auto-resume:status`)
 
-> Multiple Claude sessions across several terminal windows are all resumed (each window is targeted by its window handle). If only some windows resume, confirm each one's title shows a Claude status glyph (the Braille spinner or the idle `✳`).
+> Multiple Claude sessions are each resumed independently (one injection per session
+> console), including sessions spread across several Windows Terminal windows.
 
 ### Dashboard Not Accessible
 

@@ -243,18 +243,19 @@ tries each tier in order and falls back to the next on failure.
 └──────────────────────────────────────────────────────────┘
 ```
 
-**Windows native delivery** (`src/delivery/windows-delivery.js`) expands the
-Tier-3 step into its own ordered set: (1) WezTerm CLI `send-text`, then (2) **UI
-Automation window enumeration** — every Claude window is located and resumed by
-its window handle, so multiple sessions across separate Windows Terminal windows
-(all owned by one `WindowsTerminal.exe`) are each delivered to. It uses the
-managed `AutomationElement.SetFocus` path (Win32 `SetForegroundWindow` + SendKeys
-is blocked by Defender AMSI), detects Claude windows by their title status glyph
-(working Braille spinner or idle `✳`), restricts to terminal processes, and
-verifies focus before sending (fail-closed). A legacy process-tree SendKeys pass
-(3) runs only if enumeration finds no windows. Keystroke delivery cannot occur
-while the workstation is locked (the Windows secure desktop blocks simulated
-input); the daemon retries after unlock.
+**Windows native delivery** (`src/delivery/windows-delivery.js` +
+`src/delivery/console-inject.js`) is **console-input injection first**:
+`AttachConsole(claudePid)` → `WriteConsoleInput` writes the resume sequence
+straight into each Claude session's console buffer. This needs no window focus
+(a background process cannot steal foreground on Windows, locked or unlocked),
+reaches every Windows Terminal ConPTY session, is AMSI-clean, and — because the
+console API never touches the secure desktop — **works while the workstation is
+locked**. It targets only Claude session roots (`claude.exe` / node Claude CLIs),
+excluding plugin/MCP children that share the console, so each session is resumed
+exactly once. The GUI strategies — WezTerm CLI, UI Automation window enumeration
+(`AutomationElement.SetFocus`), and legacy process-tree SendKeys — run only as a
+fallback when console injection reaches zero sessions, since GUI focus-stealing is
+denied to the background daemon and would otherwise double-deliver.
 
 ### 7. Active Verification
 
