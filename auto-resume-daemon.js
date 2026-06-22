@@ -73,7 +73,7 @@ try {
 
 let metricsServer = null;
 
-const VERSION = '1.20.0';
+const VERSION = '1.21.0';
 const HOME_DIR = os.homedir();
 const BASE_DIR = path.join(HOME_DIR, '.claude', 'auto-resume');
 const STATUS_FILE = path.join(BASE_DIR, 'status.json');
@@ -302,7 +302,8 @@ function writeHeartbeat() {
   try {
     fs.writeFileSync(HEARTBEAT_FILE, JSON.stringify({
       timestamp: Date.now(),
-      pid: process.pid
+      pid: process.pid,
+      version: VERSION
     }), 'utf8');
   } catch (err) {
     // Non-fatal — log but don't crash

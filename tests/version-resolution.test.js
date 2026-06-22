@@ -8,7 +8,10 @@
  * newer build — so installed updates never actually ran.
  */
 
-const { sortEntriesPreferLatest } = require('../scripts/ensure-daemon-running');
+const {
+  sortEntriesPreferLatest,
+  shouldRestartForVersion,
+} = require('../scripts/ensure-daemon-running');
 
 const names = (entries) => entries.map((e) => e.name);
 const mk = (arr) => arr.map((name) => ({ name }));
@@ -46,5 +49,23 @@ describe('sortEntriesPreferLatest', () => {
   test('handles a single version and empty input', () => {
     expect(names(sortEntriesPreferLatest(mk(['1.19.0'])))).toEqual(['1.19.0']);
     expect(sortEntriesPreferLatest([])).toEqual([]);
+  });
+});
+
+describe('shouldRestartForVersion (session-start update adoption)', () => {
+  test('restarts when running version differs from the active version', () => {
+    // /plugin update activated 1.20.0 but the long-lived daemon still runs 1.16.3
+    expect(shouldRestartForVersion('1.16.3', '1.20.0')).toBe(true);
+  });
+
+  test('does NOT restart when already on the active version (no loop)', () => {
+    expect(shouldRestartForVersion('1.20.0', '1.20.0')).toBe(false);
+  });
+
+  test('does NOT restart when either version is unknown (avoids false restarts)', () => {
+    // An older daemon that never recorded its version must be left alone.
+    expect(shouldRestartForVersion(null, '1.20.0')).toBe(false);
+    expect(shouldRestartForVersion('1.20.0', null)).toBe(false);
+    expect(shouldRestartForVersion(null, null)).toBe(false);
   });
 });

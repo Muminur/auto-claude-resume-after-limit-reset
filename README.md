@@ -632,6 +632,30 @@ Patterns are compiled as case-insensitive RegExp. Max length 200 chars. Nested q
 
 ## Changelog
 
+### v1.21.0 — Auto-adopt updates at session start (2026-06-22)
+
+**Updates now take effect automatically — no manual daemon restart needed.**
+
+`/plugin update` activates a new version but never restarts the long-lived daemon, and
+the SessionStart hook skipped any daemon that was already running — so the daemon kept
+executing the **old** code indefinitely (this, together with the v1.20.0 resolver bug,
+is why earlier fixes appeared to do nothing). The launch path is governed by
+`CLAUDE_PLUGIN_ROOT` (the active version), so simply picking the newest cached version
+was not enough on its own.
+
+- **feat(ensure-daemon):** The SessionStart hook now compares the **running** daemon's
+  version against the **active** version and, if they differ, stops the old daemon and
+  starts the new one — so the next time you open Claude Code after an update, the daemon
+  adopts it automatically. The check is conservative (acts only when both versions are
+  known) to avoid restart loops, and runs at session start rather than mid-session so an
+  in-flight rate-limit countdown is never interrupted.
+- **feat(daemon):** The daemon records its `version` in `heartbeat.json` so the hook can
+  read what's actually running.
+
+> Downloading new versions is still `/plugin update` (run it once to move onto 1.21.0);
+> from then on, the daemon picks up each update on the next session with no manual
+> stop/start.
+
 ### v1.20.0 — Fix: stale daemon version shadowed all updates (2026-06-22)
 
 **The real reason earlier fixes appeared to do nothing: the daemon kept running an old cached version.**

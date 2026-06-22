@@ -249,6 +249,70 @@ function isDaemonRunning() {
   }
 }
 
+/**
+ * Read the VERSION constant from a daemon source file (the version the hook would
+ * launch). Returns null if it can't be determined.
+ */
+function readDaemonFileVersion(daemonPath) {
+  try {
+    const src = fs.readFileSync(daemonPath, 'utf8');
+    const m = /const\s+VERSION\s*=\s*['"]([^'"]+)['"]/.exec(src);
+    return m ? m[1] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Read the version of the currently-running daemon from its heartbeat file.
+ * Returns null if absent (e.g. an older daemon that didn't record its version).
+ */
+function readRunningDaemonVersion() {
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(getAutoResumeDir(), 'heartbeat.json'), 'utf8'));
+    return data && typeof data.version === 'string' ? data.version : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Decide whether the running daemon should be restarted to adopt the active
+ * version. Only true when BOTH versions are known and they differ — an unknown
+ * version (older daemon without a recorded version) must NOT trigger a restart,
+ * to avoid restart loops / false positives.
+ *
+ * @param {string|null} runningVersion
+ * @param {string|null} activeVersion
+ * @returns {boolean}
+ */
+function shouldRestartForVersion(runningVersion, activeVersion) {
+  return Boolean(activeVersion && runningVersion && activeVersion !== runningVersion);
+}
+
+/**
+ * Stop the running daemon by its PID file so the hook can relaunch a newer build.
+ * Used for version adoption — a long-lived daemon is never restarted by `/plugin
+ * update` on its own, so without this it keeps running the old code forever.
+ */
+function stopRunningDaemonForUpdate() {
+  try {
+    const pid = parseInt(fs.readFileSync(getPidFile(), 'utf8').trim(), 10);
+    if (!isNaN(pid)) {
+      try { process.kill(pid, 'SIGTERM'); } catch (e) { /* may already be gone */ }
+      // Give it a brief moment, then force if still present (best-effort, sync).
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        try { process.kill(pid, 0); } catch (e) { break; } // gone
+      }
+      try { process.kill(pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+    }
+    try { fs.unlinkSync(getPidFile()); } catch (e) { /* ignore */ }
+  } catch (e) {
+    // If we can't read the PID file there's nothing to stop.
+  }
+}
+
 // Start the daemon
 function startDaemon(daemonPath) {
   const autoResumeDir = getAutoResumeDir();
@@ -414,16 +478,30 @@ function main() {
     // Diagnostic: check if Stop hook has been running
     checkStopHookHealth();
 
+    // Resolve the daemon we WOULD launch (= the active plugin version) up front,
+    // so that if one is already running we can compare versions and adopt updates.
+    const daemonPath = findDaemonPath();
+
     // Check if already running (includes heartbeat freshness check)
     if (isDaemonRunning()) {
-      // Daemon is running, output success silently
-      console.log(JSON.stringify(formatHookOutput('running', 'Auto-resume daemon is running')));
-      process.exit(0);
-      return;
+      // Auto-adopt updates at session start: `/plugin update` activates a new
+      // version but never restarts the long-lived daemon, so without this it keeps
+      // running the old code indefinitely (the root cause of stale builds). If the
+      // running version differs from the now-active version, restart onto the new
+      // one. Only act when BOTH versions are known, to avoid false restarts.
+      const activeVersion = daemonPath ? readDaemonFileVersion(daemonPath) : null;
+      const runningVersion = readRunningDaemonVersion();
+      if (shouldRestartForVersion(runningVersion, activeVersion)) {
+        stopRunningDaemonForUpdate();
+        // fall through to start the active version below
+      } else {
+        // Up to date (or version undeterminable) — leave the running daemon alone.
+        console.log(JSON.stringify(formatHookOutput('running', 'Auto-resume daemon is running')));
+        process.exit(0);
+        return;
+      }
     }
 
-    // Find daemon path
-    const daemonPath = findDaemonPath();
     if (!daemonPath) {
       // Daemon not found - this is okay, might not be fully installed
       console.log(JSON.stringify(formatHookOutput('not_found', 'Auto-resume daemon not installed')));
@@ -464,6 +542,10 @@ if (require.main === module) {
 // Export functions for testing
 module.exports = {
   sortEntriesPreferLatest,
+  readDaemonFileVersion,
+  readRunningDaemonVersion,
+  shouldRestartForVersion,
+  stopRunningDaemonForUpdate,
   findDaemonPath,
   isDaemonRunning,
   isDaemonHeartbeatFresh,
